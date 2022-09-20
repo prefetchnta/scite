@@ -540,6 +540,14 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 
 		if (!segments.empty()) {
 
+#if defined(_USING_V110_SDK71_)
+			std::atomic<uint32_t> nextIndex = 0;
+
+			const bool textUnicode = CpUtf8 == model.pdoc->dbcsCodePage;
+			IPositionCache *pCache = posCache.get();
+
+			LayoutSegments(pCache, surface, vstyle, ll, segments, nextIndex, textUnicode, false);
+#else
 			const size_t threadsForLength = std::max(1, numCharsInLine / bytesPerLayoutThread);
 			size_t threads = std::min<size_t>({ segments.size(), threadsForLength, maxLayoutThreads });
 			if (!surface->SupportsFeature(Supports::ThreadSafeMeasureWidths)) {
@@ -567,6 +575,7 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 			for (const std::future<void> &f : futures) {
 				f.wait();
 			}
+#endif
 		}
 
 		// Accumulate absolute positions from relative positions within segments and expand tabs

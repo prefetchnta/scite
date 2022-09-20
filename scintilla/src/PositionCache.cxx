@@ -971,10 +971,12 @@ void PositionCache::MeasureWidths(Surface *surface, const ViewStyle &vstyle, uns
 		// Two way associative: try two probe positions.
 		const size_t hashValue = PositionCacheEntry::Hash(styleNumber, sv);
 		probe = hashValue % pces.size();
+#if defined(_USING_V110_SDK71_)
 		std::unique_lock<std::mutex> guard(mutex, std::defer_lock);
 		if (needsLocking) {
 			guard.lock();
 		}
+#endif
 		if (pces[probe].Retrieve(styleNumber, sv, positions)) {
 			return;
 		}
@@ -992,10 +994,12 @@ void PositionCache::MeasureWidths(Surface *surface, const ViewStyle &vstyle, uns
 	surface->MeasureWidths(fontStyle, sv, positions);
 	if (probe < pces.size()) {
 		// Store into cache
+#if defined(_USING_V110_SDK71_)
 		std::unique_lock<std::mutex> guard(mutex, std::defer_lock);
 		if (needsLocking) {
 			guard.lock();
 		}
+#endif
 		clock++;
 		if (clock > 60000) {
 			// Since there are only 16 bits for the clock, wrap it round and
