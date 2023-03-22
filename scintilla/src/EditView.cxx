@@ -494,8 +494,8 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 
 			const bool textUnicode = CpUtf8 == model.pdoc->dbcsCodePage;
 			IPositionCache *pCache = posCache.get();
-
-			LayoutSegments(pCache, surface, vstyle, ll, segments, nextIndex, textUnicode, false);
+			callerMultiThreaded = false;
+			LayoutSegments(pCache, surface, vstyle, ll, segments, nextIndex, textUnicode, callerMultiThreaded);
 #else
 			const size_t threadsForLength = std::max(1, numCharsInLine / bytesPerLayoutThread);
 			size_t threads = std::min<size_t>({ segments.size(), threadsForLength, maxLayoutThreads });
