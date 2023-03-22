@@ -14,27 +14,24 @@ noExplicitConstructor:scite/src/FilePath.h
 // Cppcheck wrongly flags check as always true
 knownConditionTrueFalse:scite/src/PropSetFile.cxx
 
-// string::starts_with() not available with c++17.
-stlIfStrFind:scite/src/PropSetFile.cxx
-
 // Windows and GTK define classes with the same name
 ctuOneDefinitionRuleViolation:scite/win32/Strips.h
 ctuOneDefinitionRuleViolation:scite/gtk/Widget.h
 ctuOneDefinitionRuleViolation:scite/gtk/Strips.h
 
-// Prefer passing string_view by value.
-passedByValue:scite/src/SciTEBase.cxx
-
 // This is an unusual case where a pointer inside a std::string is needed later in the code.
 variableScope:scite/src/SciTEBase.cxx
 
-// dynamic_cast can return nullptr.
-knownConditionTrueFalse:scite/src/SciTEBuffers.cxx
+// Accessing 0th element of string is OK. Only triggers on non-threaded runs.
+//ctuArrayIndex:scite/src/SciTEBuffers.cxx
 
 // Cppcheck seems to be assuming only first condition (start < length) can cause loop termination
 knownConditionTrueFalse:scite/src/SciTEIO.cxx
 
-// Pysically but not logically const.
+// This code is using NULs inside strings to terminate early so fixing warning causes failure.
+stlcstrConstructor:scite/gtk/SciTEGTK.cxx
+
+// Physically but not logically const.
 constParameter:scite/gtk/Widget.cxx
 
 // Suppress everything in lua as that comes from the Lua distribution

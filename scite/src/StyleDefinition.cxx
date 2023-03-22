@@ -136,6 +136,10 @@ bool StyleDefinition::ParseStyleDefinition(std::string_view definition) {
 			specified = static_cast<flags>(specified | sdChangeable);
 			changeable = false;
 		}
+		if ((optionName == "invisiblerepresentation") && !optionValue.empty()) {
+			specified = static_cast<flags>(specified | sdInvisibleRep);
+			invisibleRep = optionValue;
+		}
 	}
 	return true;
 }
@@ -160,7 +164,7 @@ int IntFromHexByte(std::string_view hexByte) noexcept {
 	return IntFromHexDigit(hexByte[0]) * 16 + IntFromHexDigit(hexByte[1]);
 }
 
-SA::Colour ColourFromString(const std::string &s) {
+SA::Colour ColourFromString(std::string_view s) {
 	if (s.length() >= 7) {
 		const int r = IntFromHexByte(&s[1]);
 		const int g = IntFromHexByte(&s[3]);
@@ -343,10 +347,10 @@ bool MarkerDefinition::ParseMarkerDefinition(std::string_view definition) {
 				}
 			}
 			if (!optionValue.empty() && ((optionName == "colour") || (optionName == "color") || (optionName == "fore"))) {
-				colour = ColourFromString(std::string(optionValue));
+				colour = ColourAlphaFromString(std::string(optionValue));
 			}
 			if (!optionValue.empty() && (optionName == "back")) {
-				back = ColourFromString(std::string(optionValue));
+				back = ColourAlphaFromString(std::string(optionValue));
 			}
 		} catch (std::logic_error &) {
 			// Ignore bad values, either non-numeric or out of range numeric

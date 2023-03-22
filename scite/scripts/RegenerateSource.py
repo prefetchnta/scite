@@ -121,14 +121,14 @@ def UpdateVersionNumbers(sci, pathSciTE, lexVersion, scintillaVersion):
         "       Release",
         "       Release " + sci.versionDotted)
     ReplaceREInFile(pathDownload,
-        r"/www.scintilla.org/([a-zA-Z]+)\d\d\d",
+        r"/www.scintilla.org/([a-zA-Z]+)\d{3,5}",
         r"/www.scintilla.org/\g<1>" +  sci.version,
         0)
     ReplaceREInFile(pathDownload,
-        r"/www.scintilla.org/(wscite32_)\d\d\d",
+        r"/www.scintilla.org/(wscite32_)\d{3,5}",
         r"/www.scintilla.org/\g<1>" +  sci.version)
     ReplaceREInFile(pathDownload,
-        r"/www.scintilla.org/(Sc32_)\d\d\d",
+        r"/www.scintilla.org/(Sc32_)\d{3,5}",
         r"/www.scintilla.org/\g<1>" +  sci.version)
 
     pathMain = pathSciTE / "doc" / "SciTE.html"
@@ -203,7 +203,7 @@ def ExtractItems(pathHistory):
     markStart = "<h2>Releases</h2>"
     markEnd = "scite446.zip"
     items = []
-    with pathHistory.open(encoding=neutralEncoding) as history:
+    with pathHistory.open(encoding='utf-8') as history:
         afterStart = False
         for l in history:
             if markEnd in l:
@@ -258,6 +258,67 @@ def NewsFormatted(section, items):
 def SortListInsensitive(l):
     l.sort(key=lambda p: str(p).lower())
 
+def CheckOrder(sciteItems, items, name):
+    # Check that sciteItems is in the same order as items except for repeated values
+    shownName = False
+    sciteCondensed = [CondenseItem(i) for i in sciteItems]
+    previous = CondenseItem(items[0])
+    for it in items[1:]:
+        itCondensed = CondenseItem(it)
+        if itCondensed in sciteCondensed and previous in sciteCondensed:
+            indexPrevious = sciteCondensed.index(previous)
+            indexItem = sciteCondensed.index(itCondensed)
+            if indexItem < indexPrevious and \
+                sciteCondensed.count(itCondensed) == 1 and \
+                "avoids activating a Lua script lexer" not in itCondensed:
+                # .count() weeds out repeats and "avoids..." is for the oldest release which is non-standard
+                if not shownName:
+                    print(f"{name}:\n")
+                print(f"{indexPrevious} or {indexItem} out of order")
+                print(f"{previous}")
+                print(f"{itCondensed}")
+                print(f"")
+                shownName = True
+        previous = itCondensed
+
+def RecentHistoryVersion(pathHistory):
+    contents = pathHistory.read_text("utf-8")
+    release = re.search("Release ([0-9.]+)", contents)
+    return release.group(1)
+
+def CheckHistoryLinks(pathHistory):
+    contents = pathHistory.read_text("utf-8")
+
+    # SourceForge current links
+    #<a href="https://sourceforge.net/p/scintilla/bugs/2344/">Bug #2344</a>
+    #<a href="https://sourceforge.net/p/scintilla/feature-requests/1190/">Feature #1190.</a>
+    for link, literal in re.findall(r'/scintilla/[a-z-]+/(\d+)/">[a-zA-Z ]+#(\d+)', contents):
+        if link != literal:
+            print(f"{link} -> {literal}")
+
+    # SourceForge old style links
+    #<a href="https://sourceforge.net/tracker/?func=detail&atid=352439&aid=2343375&group_id=2439">Feature #2343375.</a>
+    #<a href="https://sourceforge.net/tracker/?func=detail&atid=102439&aid=210240&group_id=2439">Bug #210240.</a>
+    for link, literal in re.findall(r'&aid=(\d+)&group_id=\d+">[a-zA-Z ]+#(\d+)', contents):
+        if link != literal:
+            print(f"{link} -> {literal}")
+
+    # GitHub issues and pull requests
+    #<a href="https://github.com/ScintillaOrg/lexilla/issues/110">Issue #110</a>
+    #<a href="https://github.com/ScintillaOrg/lexilla/pull/49">Pull request #49</a>
+    for link, literal in re.findall(r'/ScintillaOrg/lexilla/\w+/(\d+)">[a-zA-Z ]+#(\d+)</a>', contents):
+        if link != literal:
+            print(f"{link} -> {literal}")
+
+    # Download links
+    #<a href="https://prdownloads.sourceforge.net/scintilla/scite201.zip?download">Release 2.01</a>
+    for link, literal in re.findall(r'/scintilla/(\w+).zip\?download">[a-zA-Z ]+([0-9.]+)', contents):
+        linkNums = "".join(x for x in link if x.isdigit())
+        literalNums = "".join(x for x in literal if x.isdigit())
+        # SciTE 2.0 is a special case
+        if linkNums != literalNums and linkNums != "200":
+            print(f"{link} {linkNums}-> {literal}")
+
 def RegenerateAll():
     sci = ScintillaData.ScintillaData(sciDirectory)
     lex = LexillaData.LexillaData(lexDirectory)
@@ -300,9 +361,13 @@ def RegenerateAll():
     sciHistory = sciDirectory / "doc" / "ScintillaHistory.html"
     sciCredits = ScintillaData.FindCredits(sciHistory, False)
     sciItems = ExtractItems(sciHistory)
+    sciHistoryVersion = RecentHistoryVersion(sciHistory)
+
     lexHistory = lexDirectory / "doc" / "LexillaHistory.html"
     lexCredits = ScintillaData.FindCredits(lexHistory, False)
     lexItems = ExtractItems(lexHistory)
+    lexHistoryVersion = RecentHistoryVersion(lexHistory)
+
     pathHistory = pathSciTE / "doc" / "SciTEHistory.html"
     sciteCredits = ScintillaData.FindCredits(pathHistory, False)
     sciteItems = ExtractItems(pathHistory)
@@ -312,15 +377,21 @@ def RegenerateAll():
     if newFromSci or newFromLex:
         news = ""
         if newFromLex:
-            news += NewsFormatted("Lexilla " + lex.versionDotted, newFromLex)
+            news += NewsFormatted("Lexilla " + lexHistoryVersion, newFromLex)
         if newFromSci:
-            news += NewsFormatted("Scintilla " + sci.versionDotted, newFromSci)
+            news += NewsFormatted("Scintilla " + sciHistoryVersion, newFromSci)
         contents = pathHistory.read_text("utf-8")
         withAdditions = contents.replace(
             r"    </ul>",
             news + r"    </ul>",
             1)
         UpdateFile(pathHistory, withAdditions)
+
+    sciteItemsUpdated = ExtractItems(pathHistory)
+    CheckOrder(sciteItemsUpdated, sciItems, "Scintilla")
+    CheckOrder(sciteItemsUpdated, lexItems, "Lexilla")
+
+    CheckHistoryLinks(pathHistory)
 
     for c in sciCredits + lexCredits:
         if c not in sciteCredits:

@@ -22,9 +22,10 @@ public:
 	Scintilla::CaseVisible caseForce;
 	bool visible;
 	bool changeable;
+	std::string invisibleRep;
 	enum flags { sdNone = 0, sdFont = 0x1, sdSize = 0x2, sdFore = 0x4, sdBack = 0x8,
 		     sdWeight = 0x10, sdItalics = 0x20, sdEOLFilled = 0x40, sdUnderlined = 0x80,
-		     sdCaseForce = 0x100, sdVisible = 0x200, sdChangeable = 0x400
+		     sdCaseForce = 0x100, sdVisible = 0x200, sdChangeable = 0x400, sdInvisibleRep=0x800
 		   } specified;
 	explicit StyleDefinition(std::string_view definition);
 	bool ParseStyleDefinition(std::string_view definition);
@@ -44,7 +45,7 @@ inline constexpr Scintilla::ColourAlpha ColourRGBA(unsigned int red, unsigned in
 
 int IntFromHexByte(std::string_view hexByte) noexcept;
 
-Scintilla::Colour ColourFromString(const std::string &s);
+Scintilla::Colour ColourFromString(std::string_view s);
 Scintilla::ColourAlpha ColourAlphaFromString(std::string_view s);
 
 struct IndicatorDefinition {

@@ -3326,7 +3326,7 @@ std::string SciTEGTK::TranslatePath(const char *path) {
 		spath.append("/");
 		size_t end = spath.find("/");
 		while (spath.length() > 1) {
-			std::string segment(spath.c_str(), 0, end);
+			std::string segment(spath, 0, end);
 			GUI::gui_string segmentLocalised = localiser.Text(segment.c_str());
 			std::replace(segmentLocalised.begin(), segmentLocalised.end(), '/', '|');
 			spathTranslated.append("/");

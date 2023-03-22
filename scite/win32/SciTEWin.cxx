@@ -324,7 +324,8 @@ int CodePageFromName(const std::string &encodingName) {
 	struct Encoding {
 		const char *name;
 		int codePage;
-	} knownEncodings[] = {
+	};
+	const Encoding	knownEncodings[] = {
 		{ "ascii", CP_UTF8 },
 		{ "utf-8", CP_UTF8 },
 		{ "latin1", 1252 },
@@ -494,7 +495,7 @@ SystemAppearance SciTEWin::WindowsAppearance() const noexcept {
 		DWORD val = 99;
 		DWORD cbData = sizeof(val);
 		const LSTATUS status = ::RegQueryValueExW(hkeyPersonalize, L"AppsUseLightTheme", nullptr,
-			&type, reinterpret_cast<LPBYTE>(&val), reinterpret_cast<LPDWORD>(&cbData));
+			&type, reinterpret_cast<LPBYTE>(&val), &cbData);
 		RegCloseKey(hkeyPersonalize);
 		if (status == ERROR_SUCCESS) {
 			currentAppearance.dark = val == 0;
@@ -616,8 +617,8 @@ void SciTEWin::ExecuteHelp(const char *cmd) {
 		if (pos != GUI::gui_string::npos) {
 			GUI::gui_string topic = s.substr(0, pos);
 			GUI::gui_string path = s.substr(pos + 1);
-			typedef HWND (WINAPI *HelpFn)(HWND, const wchar_t *, UINT, DWORD_PTR);
-			HelpFn fnHHW = reinterpret_cast<HelpFn>(::GetProcAddress(hHH, "HtmlHelpW"));
+			using HelpFn = HWND(WINAPI *)(HWND, const wchar_t *, UINT, DWORD_PTR);
+			HelpFn fnHHW = DLLFunction<HelpFn>(hHH, "HtmlHelpW");
 			if (fnHHW) {
 				XHH_AKLINK ak {};
 				ak.cbStruct = sizeof(ak);
@@ -763,16 +764,6 @@ void SciTEWin::Command(WPARAM wParam, LPARAM lParam) {
 		Activate(lParam);
 		break;
 
-	case IDM_FINISHEDEXECUTE: {
-			jobQueue.SetExecuting(false);
-			if (needReadProperties)
-				ReadProperties();
-			CheckMenus();
-			jobQueue.ClearJobs();
-			CheckReload();
-		}
-		break;
-
 	case IDM_ONTOP:
 		topMost = (topMost ? false : true);
 		::SetWindowPos(MainHWND(), (topMost ? HWND_TOPMOST : HWND_NOTOPMOST), 0, 0, 0, 0, SWP_NOMOVE + SWP_NOSIZE);
@@ -846,7 +837,6 @@ void SciTEWin::ResetExecution() {
 	CheckReload();
 	CheckMenus();
 	jobQueue.ClearJobs();
-	::SendMessage(MainHWND(), WM_COMMAND, IDM_FINISHEDEXECUTE, 0);
 }
 
 void SciTEWin::ExecuteNext() {
@@ -1233,10 +1223,10 @@ void SciTEWin::ProcessExecute() {
 	PostOnMainThread(WORK_EXECUTE, &cmdWorker);
 }
 
-void SciTEWin::ShellExec(const std::string &cmd, const char *dir) {
+void SciTEWin::ShellExec(std::string_view cmd, std::string_view dir) {
 	// guess if cmd is an executable, if this succeeds it can
 	// contain spaces without enclosing it with "
-	std::string cmdLower = cmd;
+	std::string cmdLower(cmd);
 	LowerCaseAZ(cmdLower);
 	const char *mycmdLowered = cmdLower.c_str();
 
@@ -1247,7 +1237,7 @@ void SciTEWin::ShellExec(const std::string &cmd, const char *dir) {
 		s = strstr(mycmdLowered, ".bat");
 	if (!s)
 		s = strstr(mycmdLowered, ".com");
-	std::vector<char> cmdcopy(cmd.c_str(), cmd.c_str() + cmd.length() + 1);
+	std::string cmdcopy(cmd);
 	char *mycmdcopy = &cmdcopy[0];
 	char *mycmd;
 	char *mycmdEnd = nullptr;
@@ -1285,9 +1275,9 @@ void SciTEWin::ShellExec(const std::string &cmd, const char *dir) {
 			myparams = mycmdEnd;
 	}
 
-	GUI::gui_string sMycmd = GUI::StringFromUTF8(mycmd);
-	GUI::gui_string sMyparams = GUI::StringFromUTF8(myparams);
-	GUI::gui_string sDir = GUI::StringFromUTF8(dir);
+	const GUI::gui_string sMycmd = GUI::StringFromUTF8(mycmd);
+	const GUI::gui_string sMyparams = GUI::StringFromUTF8(myparams);
+	const GUI::gui_string sDir = GUI::StringFromUTF8(dir);
 
 	SHELLEXECUTEINFO exec {};
 	exec.cbSize = sizeof(exec);
@@ -1330,19 +1320,20 @@ void SciTEWin::Execute() {
 	cmdWorker.outputScroll = props.GetInt("output.scroll", 1);
 	cmdWorker.originalEnd = wOutput.Length();
 	cmdWorker.commandTime.Duration(true);
-	cmdWorker.flags = jobQueue.jobQueue[cmdWorker.icmd].flags;
+	const Job job = jobQueue.jobQueue[cmdWorker.icmd];
+	cmdWorker.flags = job.flags;
 	if (scrollOutput)
 		wOutput.GotoPos(wOutput.Length());
 
-	if (jobQueue.jobQueue[cmdWorker.icmd].jobType == JobSubsystem::extension) {
+	if (job.jobType == JobSubsystem::extension) {
 		// Execute extensions synchronously
-		if (jobQueue.jobQueue[cmdWorker.icmd].flags & jobGroupUndo)
+		if (job.flags & jobGroupUndo)
 			wEditor.BeginUndoAction();
 
 		if (extender)
-			extender->OnExecute(jobQueue.jobQueue[cmdWorker.icmd].command.c_str());
+			extender->OnExecute(job.command.c_str());
 
-		if (jobQueue.jobQueue[cmdWorker.icmd].flags & jobGroupUndo)
+		if (job.flags & jobGroupUndo)
 			wEditor.EndUndoAction();
 
 		ExecuteNext();
@@ -1379,10 +1370,10 @@ void SciTEWin::StopExecute() {
 	jobQueue.SetCancelFlag(true);
 }
 
-void SciTEWin::AddCommand(const std::string &cmd, const std::string &dir, JobSubsystem jobType, const std::string &input, int flags) {
+void SciTEWin::AddCommand(std::string_view cmd, std::string_view dir, JobSubsystem jobType, std::string_view input, int flags) {
 	if (cmd.length()) {
 		if ((jobType == JobSubsystem::shell) && ((flags & jobForceQueue) == 0)) {
-			std::string pCmd = cmd;
+			std::string pCmd(cmd);
 			parameterisedCommand = "";
 			if (pCmd[0] == '*') {
 				pCmd.erase(0, 1);
@@ -1394,7 +1385,7 @@ void SciTEWin::AddCommand(const std::string &cmd, const std::string &dir, JobSub
 				ParamGrab();
 			}
 			pCmd = props.Expand(pCmd);
-			ShellExec(pCmd, dir.c_str());
+			ShellExec(pCmd, dir);
 		} else {
 			SciTEBase::AddCommand(cmd, dir, jobType, input, flags);
 		}
@@ -2344,21 +2335,20 @@ uintptr_t SciTEWin::EventLoop() {
 static void RestrictDLLPath() noexcept {
 	// Try to limit the locations where DLLs will be loaded from to prevent binary planting.
 	// That is where a bad DLL is placed in the current directory or in the PATH.
-	typedef BOOL(WINAPI *SetDefaultDllDirectoriesSig)(DWORD DirectoryFlags);
-	typedef BOOL(WINAPI *SetDllDirectorySig)(LPCTSTR lpPathName);
+	using SetDefaultDllDirectoriesSig = BOOL(WINAPI *)(DWORD DirectoryFlags);
+	using SetDllDirectorySig = BOOL(WINAPI *)(LPCTSTR lpPathName);
 	HMODULE kernel32 = ::GetModuleHandle(TEXT("kernel32.dll"));
 	if (kernel32) {
 		// SetDefaultDllDirectories is stronger, limiting search path to just the application and
 		// system directories but is only available on Windows 8+
 		SetDefaultDllDirectoriesSig SetDefaultDllDirectoriesFn =
-			reinterpret_cast<SetDefaultDllDirectoriesSig>(::GetProcAddress(
-						kernel32, "SetDefaultDllDirectories"));
+			DLLFunction<SetDefaultDllDirectoriesSig>(
+				kernel32, "SetDefaultDllDirectories");
 		if (SetDefaultDllDirectoriesFn) {
 			SetDefaultDllDirectoriesFn(LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
 		} else {
 			SetDllDirectorySig SetDllDirectoryFn =
-				reinterpret_cast<SetDllDirectorySig>(::GetProcAddress(
-							kernel32, "SetDllDirectoryW"));
+				DLLFunction<SetDllDirectorySig>(kernel32, "SetDllDirectoryW");
 			if (SetDllDirectoryFn) {
 				// For security, remove current directory from the DLL search path
 				SetDllDirectoryFn(TEXT(""));

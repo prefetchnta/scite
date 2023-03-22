@@ -252,42 +252,48 @@ FilePath FilePath::Directory() const {
 	}
 }
 
-#ifdef _WIN32
+namespace {
+
+// The stat struct is named differently on Win32 and Unix.
+#if defined(_WIN32)
+#if defined(_MSC_VER)
+typedef struct _stat64i32 FileStatus;
+#else
+typedef struct _stat FileStatus;
+#endif
+#else
+// Unix
+typedef struct stat FileStatus;
+#endif
+
+#if defined(_WIN32)
 
 // Substitute functions that take wchar_t arguments but have the same name
 // as char functions so that the compiler will choose the right form.
 
-static size_t strlen(const wchar_t *str) noexcept {
-	return wcslen(str);
-}
-
-static int chdir(const wchar_t *dirname) noexcept {
+int chdir(const wchar_t *dirname) noexcept {
 	return _wchdir(dirname);
 }
 
-static FILE *fopen(const wchar_t *filename, const wchar_t *mode) noexcept {
+FILE *fopen(const wchar_t *filename, const wchar_t *mode) noexcept {
 	return _wfopen(filename, mode);
 }
 
-static int unlink(const wchar_t *filename) noexcept {
+int unlink(const wchar_t *filename) noexcept {
 	return _wunlink(filename);
 }
 
-static int access(const wchar_t *path, int mode) noexcept {
+int access(const wchar_t *path, int mode) noexcept {
 	return _waccess(path, mode);
 }
 
-#if defined(_MSC_VER)
-static int stat(const wchar_t *path, struct _stat64i32 *buffer) noexcept {
+int stat(const wchar_t *path, FileStatus *buffer) noexcept {
 	return _wstat(path, buffer);
 }
-#else
-static int stat(const wchar_t *path, struct _stat *buffer) noexcept {
-	return _wstat(path, buffer);
-}
-#endif
 
 #endif
+
+}
 
 FilePath FilePath::NormalizePath() const {
 	if (fileName.empty()) {
@@ -471,10 +477,10 @@ FILE *FilePath::Open(const GUI::gui_char *mode) const noexcept {
 	}
 }
 
-/// Size of block for file reading.
-static constexpr size_t readBlockSize = 64 * 1024;
-
 std::string FilePath::Read() const {
+	/// Size of block for file reading.
+	constexpr size_t readBlockSize = 64 * 1024;
+
 	std::string data;
 	FileHolder fp(Open(fileRead));
 	if (fp) {
@@ -502,15 +508,7 @@ time_t FilePath::ModifiedTime() const noexcept {
 		return 0;
 	if (access(AsInternal(), R_OK) == -1)
 		return 0;
-#ifdef _WIN32
-#if defined(_MSC_VER)
-	struct _stat64i32 statusFile;
-#else
-	struct _stat statusFile;
-#endif
-#else
-	struct stat statusFile;
-#endif
+	FileStatus statusFile;
 	if (stat(AsInternal(), &statusFile) != -1)
 		return statusFile.st_mtime;
 	else
@@ -542,15 +540,7 @@ bool FilePath::Exists() const noexcept {
 }
 
 bool FilePath::IsDirectory() const noexcept {
-#ifdef _WIN32
-#if defined(_MSC_VER)
-	struct _stat64i32 statusFile;
-#else
-	struct _stat statusFile;
-#endif
-#else
-	struct stat statusFile;
-#endif
+	FileStatus statusFile;
 	if (stat(AsInternal(), &statusFile) != -1)
 #ifdef WIN32
 		return (statusFile.st_mode & _S_IFDIR) != 0;
@@ -615,16 +605,23 @@ bool FilePath::Matches(GUI::gui_string_view pattern) const {
 	std::replace(pat.begin(), pat.end(), ' ', '\0');
 	size_t start = 0;
 	while (start < pat.length()) {
-		const GUI::gui_char *patElement = pat.c_str() + start;
+		const GUI::gui_string_view patElement(pat.c_str() + start);
 		if (PatternMatch(patElement, nameCopy)) {
 			return true;
 		}
-		start += strlen(patElement) + 1;
+		start += patElement.length() + 1;
 	}
 	return false;
 }
 
 #ifdef WIN32
+
+namespace {
+
+typedef DWORD(STDAPICALLTYPE *GetLongSig)(const GUI::gui_char *lpszShortPath, GUI::gui_char *lpszLongPath, DWORD cchBuffer);
+GetLongSig pfnGetLong = nullptr;
+bool kernelTried = false;
+
 /**
  * Makes a long path from a given, possibly short path/file.
  *
@@ -634,13 +631,10 @@ bool FilePath::Matches(GUI::gui_string_view pattern) const {
  * @returns true on success, and the long path in @a longPath,
  * false on failure.
  */
-static bool MakeLongPath(const GUI::gui_char *shortPath, GUI::gui_string &longPath) {
+bool MakeLongPath(const GUI::gui_char *shortPath, GUI::gui_string &longPath) {
 	if (!*shortPath) {
 		return false;
 	}
-	typedef DWORD (STDAPICALLTYPE* GetLongSig)(const GUI::gui_char* lpszShortPath, GUI::gui_char* lpszLongPath, DWORD cchBuffer);
-	static GetLongSig pfnGetLong = nullptr;
-	static bool kernelTried = false;
 
 	if (!kernelTried) {
 		kernelTried = true;
@@ -669,6 +663,9 @@ static bool MakeLongPath(const GUI::gui_char *shortPath, GUI::gui_string &longPa
 	}
 	return characters != 0;
 }
+
+}
+
 #endif
 
 void FilePath::FixName() {

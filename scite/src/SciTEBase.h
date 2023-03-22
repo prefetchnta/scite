@@ -36,7 +36,7 @@ constexpr int StyleDefault = static_cast<int>(SA::StylesCommon::Default);
 struct SelectedRange {
 	SA::Position position;
 	SA::Position anchor;
-	SelectedRange(SA::Position position_= SA::InvalidPosition, SA::Position anchor_= SA::InvalidPosition) noexcept :
+	explicit SelectedRange(SA::Position position_= SA::InvalidPosition, SA::Position anchor_= SA::InvalidPosition) noexcept :
 		position(position_), anchor(anchor_) {
 	}
 };
@@ -763,8 +763,8 @@ protected:
 	SA::Line GetCurrentLineNumber();
 	SA::Position GetCurrentColumnNumber();
 	SA::Line GetCurrentScrollPosition();
-	virtual void AddCommand(const std::string &cmd, const std::string &dir,
-				JobSubsystem jobType, const std::string &input = "",
+	virtual void AddCommand(std::string_view cmd, std::string_view dir,
+				JobSubsystem jobType, std::string_view input = "",
 				int flags = 0);
 	virtual void AboutDialog() = 0;
 	virtual void QuitProgram() = 0;
@@ -874,9 +874,8 @@ protected:
 	void SetRepresentations();
 	virtual void ReadProperties();
 	void ReadEditorConfig(const std::string &fileNameForExtension);
-	std::string StyleString(const char *lang, int style) const;
 	StyleDefinition StyleDefinitionFor(int style);
-	void SetOneStyle(GUI::ScintillaWindow &win, int style, const StyleDefinition &sd);
+	void SetOneStyle(GUI::ScintillaWindow &win, int style, std::string_view definition);
 	void SetStyleBlock(GUI::ScintillaWindow &win, const char *lang, int start, int last);
 	void SetStyleFor(GUI::ScintillaWindow &win, const char *lang);
 	static void SetOneIndicator(GUI::ScintillaWindow &win, SA::IndicatorNumbers indicator, const IndicatorDefinition &ind);

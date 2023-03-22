@@ -6,11 +6,14 @@
 // The License.txt file describes the conditions under which this software may be distributed.
 
 #include "SciTEWin.h"
+#include "DLLFunction.h"
+
+namespace {
 
 /**
  * Flash the given window for the asked @a duration to visually warn the user.
  */
-static void FlashThisWindow(
+void FlashThisWindow(
 	HWND hWnd,    		///< Window to flash handle.
 	int duration) noexcept {	///< Duration of the flash state.
 
@@ -28,7 +31,7 @@ static void FlashThisWindow(
 /**
  * Play the given sound, loading if needed the corresponding DLL function.
  */
-static void PlayThisSound(
+void PlayThisSound(
 	const char *sound,    	///< Path to a .wav file or string with a frequency value.
 	int duration,    		///< If @a sound is a frequency, gives the duration of the sound.
 	HMODULE &hMM) noexcept {		///< Multimedia DLL handle.
@@ -46,8 +49,8 @@ static void PlayThisSound(
 		}
 
 		if (hMM) {
-			typedef BOOL (WINAPI *MMFn)(LPCSTR, HMODULE, DWORD);
-			MMFn fnMM = reinterpret_cast<MMFn>(::GetProcAddress(hMM, "PlaySoundA"));
+			using MMFn = BOOL(WINAPI *)(LPCSTR, HMODULE, DWORD);
+			MMFn fnMM = DLLFunction<MMFn>(hMM, "PlaySoundA");
 			if (fnMM) {
 				bPlayOK = fnMM(sound, NULL, SND_ASYNC | SND_FILENAME);
 			}
@@ -71,18 +74,17 @@ static void PlayThisSound(
 	}
 }
 
-static SciTEWin *Caller(HWND hDlg, UINT message, LPARAM lParam) noexcept {
+SciTEWin *Caller(HWND hDlg, UINT message, LPARAM lParam) noexcept {
 	if (message == WM_INITDIALOG) {
 		::SetWindowLongPtr(hDlg, DWLP_USER, lParam);
 	}
 	return reinterpret_cast<SciTEWin *>(::GetWindowLongPtr(hDlg, DWLP_USER));
 }
 
+}
+
 void SciTEWin::WarnUser(int warnID) {
 	std::string warning;
-	char flashDuration[10] = "";
-	char sound[_MAX_PATH] = "";
-	char soundDuration[10] = "";
 
 	switch (warnID) {
 	case warnFindWrapped:
@@ -107,16 +109,25 @@ void SciTEWin::WarnUser(int warnID) {
 		warning = "";
 		break;
 	}
-	const char *warn = warning.c_str();
-	const char *next = GetNextPropItem(warn, flashDuration, 10);
-	next = GetNextPropItem(next, sound, _MAX_PATH);
-	GetNextPropItem(next, soundDuration, 10);
 
-	const int flashLen = atoi(flashDuration);
+	const std::vector<std::string> warningFields = StringSplit(warning, ',');
+	int duration = 0;
+	if (warningFields.size() > 2) {
+		duration = IntegerFromString(warningFields[2], 0);
+	}
+	std::string sound;
+	if (warningFields.size() > 1) {
+		sound = warningFields[1];
+	}
+	int flashLen = 0;
+	if (warningFields.size() > 0) {
+		flashLen = IntegerFromString(warningFields[0], 0);
+	}
+
 	if (flashLen) {
 		FlashThisWindow(HwndOf(wEditor), flashLen);
 	}
-	PlayThisSound(sound, atoi(soundDuration), hMM);
+	PlayThisSound(sound.c_str(), duration, hMM);
 }
 
 bool SciTEWin::DialogHandled(GUI::WindowID id, MSG *pmsg) noexcept {
@@ -185,7 +196,7 @@ int SciTEWin::DoDialog(const TCHAR *resName, DLGPROC lpProc) {
 	return result;
 }
 
-HWND SciTEWin::CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc) {
+HWND SciTEWin::CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc) noexcept {
 	return ::CreateDialogParamW(hInstance,
 				    lpTemplateName,
 				    MainHWND(),
@@ -622,7 +633,7 @@ void SciTEWin::Print(
 	assert(lengthDoc <= lengthDocMax);
 
 	// We must subtract the physical margins from the printable area
-	Sci_RangeToFormatFull frPrint {};
+	SA::RangeToFormatFull frPrint {};
 	frPrint.hdc = hdc;
 	frPrint.hdcTarget = hdc;
 	frPrint.rc.left = rectMargins.left - rectPhysMargins.left;
@@ -649,8 +660,7 @@ void SciTEWin::Print(
 		const bool printPage = (!(pdlg.Flags & PD_PAGENUMS) ||
 					((pageNum >= pdlg.nFromPage) && (pageNum <= pdlg.nToPage)));
 
-		char pageString[32];
-		sprintf(pageString, "%0d", pageNum);
+		const std::string pageString = std::to_string(pageNum);
 		propsPrint.Set("CurrentPage", pageString);
 
 		if (printPage) {
@@ -691,7 +701,7 @@ void SciTEWin::Print(
 				::SetBkColor(hdc, sdFooter.Back());
 				::SelectObject(hdc, fontFooter);
 				const UINT ta = ::SetTextAlign(hdc, TA_TOP);
-				RECT rcw = {frPrint.rc.left, frPrint.rc.bottom + footerLineHeight / 2,
+				const RECT rcw = {frPrint.rc.left, frPrint.rc.bottom + footerLineHeight / 2,
 					    frPrint.rc.right, frPrint.rc.bottom + footerLineHeight + footerLineHeight / 2
 					   };
 				::ExtTextOutW(hdc, frPrint.rc.left + 5, frPrint.rc.bottom + footerLineHeight / 2,
@@ -1353,7 +1363,7 @@ void SciTEWin::FindInFiles() {
 		::SetFocus(hDlg);
 		return;
 	}
-	props.Set("find.what", findWhat.c_str());
+	props.Set("find.what", findWhat);
 
 	std::string directory = props.GetString("find.in.directory");
 	if (directory.length()) {
@@ -1611,7 +1621,7 @@ BOOL SciTEWin::ParametersMessage(HWND hDlg, UINT message, WPARAM wParam) {
 			}
 			for (int param = 0; param < maxParam; param++) {
 				std::string paramText = StdStringFromInteger(param + 1);
-				std::string paramTextVal = props.GetString(paramText.c_str());
+				std::string paramTextVal = props.GetString(paramText);
 				GUI::gui_string sVal = GUI::StringFromUTF8(paramTextVal);
 				dlg.SetItemText(IDPARAMSTART + param, sVal.c_str());
 			}

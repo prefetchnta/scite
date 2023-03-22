@@ -72,6 +72,7 @@ typedef void *HTHEME;
 #include "ScintillaTypes.h"
 #include "ScintillaMessages.h"
 #include "ScintillaCall.h"
+#include "ScintillaStructures.h"
 
 #include "Scintilla.h"
 #include "Lexilla.h"
@@ -258,7 +259,7 @@ protected:
 	void LocaliseDialog(HWND wDialog);
 
 	int DoDialog(const TCHAR *resName, DLGPROC lpProc);
-	HWND CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc);
+	HWND CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc) noexcept;
 	GUI::gui_string DialogFilterFromProperty(const GUI::gui_char *filterProperty);
 	void CheckCommonDialogError();
 	bool OpenDialog(const FilePath &directory, const GUI::gui_char *filesFilter) override;
@@ -399,10 +400,10 @@ public:
 	void ExecuteGrep(const Job &jobToRun);
 	DWORD ExecuteOne(const Job &jobToRun);
 	void ProcessExecute();
-	void ShellExec(const std::string &cmd, const char *dir);
+	void ShellExec(std::string_view cmd, std::string_view dir);
 	void Execute() override;
 	void StopExecute() override;
-	void AddCommand(const std::string &cmd, const std::string &dir, JobSubsystem jobType, const std::string &input = "", int flags = 0) override;
+	void AddCommand(std::string_view cmd, std::string_view dir, JobSubsystem jobType, std::string_view input = "", int flags = 0) override;
 
 	void PostOnMainThread(int cmd, Worker *pWorker) override;
 	void WorkerCommand(int cmd, Worker *pWorker) override;

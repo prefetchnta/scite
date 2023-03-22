@@ -15,11 +15,10 @@ DIR_BIN=../bin
 COMPONENT = $(DIR_BIN)/Scintilla.dll
 LIBSCI = $(DIR_BIN)/libscintilla.a
 
-WARNINGS = -Wpedantic -Wall
+WARNINGS = -Wpedantic -Wall -Wextra
 
 ifdef CLANG
 CXX = clang++
-DEFINES += -D_CRT_SECURE_NO_DEPRECATE
 else
 # MinGW GCC
 LIBSMINGW = -lstdc++
@@ -57,7 +56,7 @@ DEFINES += -DNO_CXX11_REGEX
 endif
 
 DEFINES += -D$(if $(DEBUG),DEBUG,NDEBUG)
-BASE_FLAGS += $(if $(DEBUG),-g,-Os)
+BASE_FLAGS += $(if $(DEBUG),-g,-O3)
 
 ifndef DEBUG
 STRIPFLAG=$(STRIPOPTION)

@@ -48,22 +48,13 @@ static constexpr int keywordClasses[] = {
 namespace {
 
 struct OptionsFSharp {
-	bool fold;
-	bool foldCompact;
-	bool foldComment;
-	bool foldCommentStream;
-	bool foldCommentMultiLine;
-	bool foldPreprocessor;
-	bool foldImports;
-	OptionsFSharp() {
-		fold = true;
-		foldCompact = true;
-		foldComment = true;
-		foldCommentStream = true;
-		foldCommentMultiLine = true;
-		foldPreprocessor = false;
-		foldImports = true;
-	}
+	bool fold = true;
+	bool foldCompact = true;
+	bool foldComment = true;
+	bool foldCommentStream = true;
+	bool foldCommentMultiLine = true;
+	bool foldPreprocessor = false;
+	bool foldImports = true;
 };
 
 struct OptionSetFSharp : public OptionSet<OptionsFSharp> {
@@ -91,25 +82,11 @@ struct OptionSetFSharp : public OptionSet<OptionsFSharp> {
 	}
 };
 
-const CharacterSet setOperators = CharacterSet(CharacterSet::setNone, "~^'-+*/%=@|&<>()[]{};,:!?");
-const CharacterSet setClosingTokens = CharacterSet(CharacterSet::setNone, ")}]");
-const CharacterSet setFormatSpecs = CharacterSet(CharacterSet::setNone, ".%aAbBcdeEfFgGiMoOstuxX0123456789");
-const CharacterSet setDotNetFormatSpecs = CharacterSet(CharacterSet::setNone, "cCdDeEfFgGnNpPxX");
-const CharacterSet setFormatFlags = CharacterSet(CharacterSet::setNone, ".-+0 ");
-const CharacterSet numericMetaChars1 = CharacterSet(CharacterSet::setNone, "_IbeEflmnosuxy");
-const CharacterSet numericMetaChars2 = CharacterSet(CharacterSet::setNone, "lnsy");
-std::map<int, int> numericPrefixes = { { 'b', 2 }, { 'o', 8 }, { 'x', 16 } };
-constexpr Sci_Position ZERO_LENGTH = -1;
-
 struct FSharpString {
-	Sci_Position startPos;
-	int startChar;
-	FSharpString() {
-		startPos = ZERO_LENGTH;
-		startChar = '"';
-	}
+	Sci_Position startPos = INVALID_POSITION;
+	int startChar = '"';
 	constexpr bool HasLength() const {
-		return startPos > ZERO_LENGTH;
+		return startPos > INVALID_POSITION;
 	}
 	constexpr bool CanInterpolate() const {
 		return startChar == '$';
@@ -278,16 +255,6 @@ inline bool CanEmbedQuotes(StyleContext &cxt) {
 	       cxt.Match('`', '`');
 }
 
-inline bool IsNumber(StyleContext &cxt, const int base = 10) {
-	return IsADigit(cxt.ch, base) || (IsADigit(cxt.chPrev, base) && numericMetaChars1.Contains(cxt.ch)) ||
-		(IsADigit(cxt.GetRelative(-2), base) && numericMetaChars2.Contains(cxt.ch));
-}
-
-inline bool IsFloat(const StyleContext &cxt) {
-	return (cxt.ch == '.' && IsADigit(cxt.chPrev)) ||
-		((cxt.ch == '+' || cxt.ch == '-' ) && IsADigit(cxt.chNext));
-}
-
 inline bool IsLineEnd(StyleContext &cxt, const Sci_Position offset) {
 	const int ch = cxt.GetRelative(offset, '\n');
 	return (ch == '\r' || ch == '\n');
@@ -297,10 +264,28 @@ class LexerFSharp : public DefaultLexer {
 	WordList keywords[WORDLIST_SIZE];
 	OptionsFSharp options;
 	OptionSetFSharp optionSet;
+	CharacterSet setOperators;
+	CharacterSet setFormatSpecs;
+	CharacterSet setDotNetFormatSpecs;
+	CharacterSet setFormatFlags;
+	CharacterSet numericMetaChars1;
+	CharacterSet numericMetaChars2;
+	std::map<int, int> numericPrefixes = { { 'b', 2 }, { 'o', 8 }, { 'x', 16 } };
 
 public:
-	explicit LexerFSharp() : DefaultLexer(lexerName, SCLEX_FSHARP) {
+	explicit LexerFSharp()
+	    : DefaultLexer(lexerName, SCLEX_FSHARP),
+	      setOperators(CharacterSet::setNone, "~^'-+*/%=@|&<>()[]{};,:!?"),
+	      setFormatSpecs(CharacterSet::setNone, ".%aAbBcdeEfFgGiMoOstuxX0123456789"),
+	      setDotNetFormatSpecs(CharacterSet::setNone, "cCdDeEfFgGnNpPxX"),
+	      setFormatFlags(CharacterSet::setNone, ".-+0 "),
+	      numericMetaChars1(CharacterSet::setNone, "_uU"),
+	      numericMetaChars2(CharacterSet::setNone, "fFIlLmMnsy") {
 	}
+	LexerFSharp(const LexerFSharp &) = delete;
+	LexerFSharp(LexerFSharp &&) = delete;
+	LexerFSharp &operator=(const LexerFSharp &) = delete;
+	LexerFSharp &operator=(LexerFSharp &&) = delete;
 	static ILexer5 *LexerFactoryFSharp() {
 		return new LexerFSharp();
 	}
@@ -343,28 +328,37 @@ public:
 		if (optionSet.PropertySet(&options, key, val)) {
 			return 0;
 		}
-		return ZERO_LENGTH;
+		return INVALID_POSITION;
 	}
 	Sci_Position SCI_METHOD WordListSet(int n, const char *wl) override;
 	void SCI_METHOD Lex(Sci_PositionU start, Sci_Position length, int initStyle, IDocument *pAccess) override;
 	void SCI_METHOD Fold(Sci_PositionU start, Sci_Position length, int initStyle,IDocument *pAccess) override;
+
+private:
+	inline bool IsNumber(StyleContext &cxt, const int base = 10) {
+		return IsADigit(cxt.ch, base) || (IsADigit(cxt.chPrev, base) && numericMetaChars1.Contains(cxt.ch)) ||
+		       (IsADigit(cxt.GetRelative(-2), base) && numericMetaChars2.Contains(cxt.ch));
+	}
+
+	inline bool IsFloat(StyleContext &cxt) {
+		if (cxt.MatchIgnoreCase("e+") || cxt.MatchIgnoreCase("e-")) {
+			cxt.Forward();
+			return true;
+		}
+		return ((cxt.chPrev == '.' && IsADigit(cxt.ch)) ||
+			(IsADigit(cxt.chPrev) && (cxt.ch == '.' || numericMetaChars2.Contains(cxt.ch))));
+	}
 };
 
 Sci_Position SCI_METHOD LexerFSharp::WordListSet(int n, const char *wl) {
 	WordList *wordListN = nullptr;
-	Sci_Position firstModification = ZERO_LENGTH;
+	Sci_Position firstModification = INVALID_POSITION;
 
 	if (n < WORDLIST_SIZE) {
 		wordListN = &keywords[n];
 	}
-	if (wordListN) {
-		WordList wlNew;
-		wlNew.Set(wl);
-
-		if (*wordListN != wlNew) {
-			wordListN->Set(wl);
-			firstModification = 0;
-		}
+	if (wordListN && wordListN->Set(wl)) {
+		firstModification = 0;
 	}
 	return firstModification;
 }
@@ -372,7 +366,7 @@ Sci_Position SCI_METHOD LexerFSharp::WordListSet(int n, const char *wl) {
 void SCI_METHOD LexerFSharp::Lex(Sci_PositionU start, Sci_Position length, int initStyle, IDocument *pAccess) {
 	LexAccessor styler(pAccess);
 	StyleContext sc(start, static_cast<Sci_PositionU>(length), initStyle, styler);
-	Sci_Position lineCurrent = styler.GetLine(start);
+	Sci_Position lineCurrent = styler.GetLine(static_cast<Sci_Position>(start));
 	Sci_PositionU cursor = 0;
 	UnicodeChar uniCh = UnicodeChar();
 	FSharpString fsStr = FSharpString();
@@ -413,7 +407,7 @@ void SCI_METHOD LexerFSharp::Lex(Sci_PositionU start, Sci_Position length, int i
 					state = SCE_FSHARP_CHARACTER;
 				} else if (MatchStringStart(sc)) {
 					fsStr.startChar = sc.ch;
-					fsStr.startPos = ZERO_LENGTH;
+					fsStr.startPos = INVALID_POSITION;
 					if (CanEmbedQuotes(sc)) {
 						// double quotes after this position should be non-terminating
 						fsStr.startPos = static_cast<Sci_Position>(sc.currentPos - cursor);
@@ -428,12 +422,6 @@ void SCI_METHOD LexerFSharp::Lex(Sci_PositionU start, Sci_Position length, int i
 				} else if (IsADigit(sc.ch, currentBase) ||
 					   ((sc.ch == '+' || sc.ch == '-') && IsADigit(sc.chNext))) {
 					state = SCE_FSHARP_NUMBER;
-					if (sc.ch == '0') {
-						const int prefix = sc.chNext;
-						if (numericPrefixes.find(prefix) != numericPrefixes.end()) {
-							currentBase = numericPrefixes[prefix];
-						}
-					}
 				} else if (setOperators.Contains(sc.ch) &&
 					   // don't use operator style in async keywords (e.g. `return!`)
 					   !(sc.ch == '!' && iswordstart(sc.chPrev)) &&
@@ -586,8 +574,7 @@ void SCI_METHOD LexerFSharp::Lex(Sci_PositionU start, Sci_Position length, int i
 				break;
 			case SCE_FSHARP_OPERATOR:
 				// special-case "()" and "[]" tokens as KEYWORDS - RR
-				if (setClosingTokens.Contains(sc.ch) &&
-					((sc.ch == ')' && sc.chPrev == '(') || (sc.ch == ']' && sc.chPrev == '['))) {
+				if ((sc.ch == ')' && sc.chPrev == '(') || (sc.ch == ']' && sc.chPrev == '[')) {
 					sc.ChangeState(SCE_FSHARP_KEYWORD);
 					colorSpan++;
 				} else {
@@ -596,6 +583,18 @@ void SCI_METHOD LexerFSharp::Lex(Sci_PositionU start, Sci_Position length, int i
 				state = SCE_FSHARP_DEFAULT;
 				break;
 			case SCE_FSHARP_NUMBER:
+				if ((setOperators.Contains(sc.chPrev) || IsASpaceOrTab(sc.chPrev)) && sc.ch == '0') {
+					if (numericPrefixes.find(sc.chNext) != numericPrefixes.end()) {
+						currentBase = numericPrefixes[sc.chNext];
+						sc.Forward(2);
+					}
+				} else if ((setOperators.Contains(sc.GetRelative(-2)) || IsASpaceOrTab(sc.GetRelative(-2))) &&
+					   sc.chPrev == '0') {
+					if (numericPrefixes.find(sc.ch) != numericPrefixes.end()) {
+						currentBase = numericPrefixes[sc.ch];
+						sc.Forward();
+					}
+				}
 				state = (IsNumber(sc, currentBase) || IsFloat(sc))
 					? SCE_FSHARP_NUMBER
 					// change style even when operators aren't spaced
