@@ -219,13 +219,17 @@ enum class IndentationStatus {
 	keyWordStart	// Keywords that cause indentation
 };
 
-struct StyleAndWords {
-	int styleNumber;
-	std::string words;
-	StyleAndWords() noexcept : styleNumber(0) {
-	}
-	bool IsEmpty() const noexcept { return words.length() == 0; }
-	bool IsSingleChar() const noexcept { return words.length() == 1; }
+class StyleAndWords {
+	int styleNumber = 0;
+	std::set<std::string> words;
+public:
+	StyleAndWords() noexcept;
+	explicit StyleAndWords(const std::string &definition);
+	[[nodiscard]] bool IsEmpty() const noexcept;
+	[[nodiscard]] bool IsSingleChar() const noexcept;
+	[[nodiscard]] bool IsCharacter(char ch) const noexcept;
+	[[nodiscard]] int Style() const noexcept;
+	[[nodiscard]] bool Includes(const std::string &value) const;
 };
 
 struct CurrentWordHighlight {
@@ -442,8 +446,8 @@ protected:
 	std::string wordCharacters;
 	std::string whitespaceCharacters;
 	SA::Position startCalltipWord;
-	int currentCallTip;
-	int maxCallTips;
+	ptrdiff_t currentCallTip;
+	ptrdiff_t maxCallTips;
 	std::string currentCallTipWord;
 	SA::Position lastPosCallTip;
 
@@ -576,7 +580,7 @@ protected:
 	std::string DiscoverLanguage();
 	void OpenCurrentFile(long long fileSize, bool suppressMessage, bool asynchronous);
 	virtual void OpenUriList(const char *) {}
-	virtual bool OpenDialog(const FilePath &directory, const GUI::gui_char *filesFilter) = 0;
+	virtual bool OpenDialog(const FilePath &directory, const GUI::gui_string &filesFilter) = 0;
 	virtual bool SaveAsDialog() = 0;
 	virtual void LoadSessionDialog() {}
 	virtual void SaveSessionDialog() {}
@@ -595,7 +599,7 @@ protected:
 	void PerformDeferredTasks();
 	enum class OpenCompletion { synchronous, completeCurrent, completeSwitch };
 	void CompleteOpen(OpenCompletion oc);
-	virtual bool PreOpenCheck(const GUI::gui_char *file);
+	virtual bool PreOpenCheck(const GUI::gui_string &file);
 	bool Open(const FilePath &file, OpenFlags of = ofNone);
 	bool OpenSelected();
 	void Revert();
@@ -653,7 +657,7 @@ protected:
 	SA::Span GetSelection();
 	SelectedRange GetSelectedRange();
 	void SetSelection(SA::Position anchor, SA::Position currentPos);
-	std::string GetCTag();
+	std::string GetCTag(GUI::ScintillaWindow *pw);
 	virtual std::string GetRangeInUIEncoding(GUI::ScintillaWindow &win, SA::Span span);
 	static std::string GetLine(GUI::ScintillaWindow &win, SA::Line line);
 	void RangeExtend(GUI::ScintillaWindow &wCurrent, SA::Span &range,
@@ -725,8 +729,8 @@ protected:
 	void GoMatchingBrace(bool select);
 	void GoMatchingPreprocCond(int direction, bool select);
 	virtual void FindReplace(bool replace) = 0;
-	void OutputAppendString(const char *s, SA::Position len = -1);
-	virtual void OutputAppendStringSynchronised(const char *s, SA::Position len = -1);
+	void OutputAppendString(std::string_view s);
+	virtual void OutputAppendStringSynchronised(std::string_view s);
 	virtual void Execute();
 	virtual void StopExecute() = 0;
 	void ShowMessages(SA::Line line);
@@ -837,7 +841,7 @@ protected:
 
 	void RemoveToolsMenu();
 	void SetMenuItemLocalised(int menuNumber, int position, int itemID,
-				  const char *text, const char *mnemonic);
+				  std::string_view text, std::string_view mnemonic);
 	bool ToolIsImmediate(int item);
 	void SetToolsMenu();
 	JobSubsystem SubsystemType(const char *cmd);
@@ -860,7 +864,6 @@ protected:
 	StyleAndWords GetStyleAndWords(const char *base);
 	std::string ExtensionFileName() const;
 	void SetElementColour(SA::Element element, const char *key);
-	static const char *GetNextPropItem(const char *pStart, char *pPropItem, size_t maxLen) noexcept;
 	void ForwardPropertyToEditor(const char *key);
 	struct MarkerAppearance {
 		SA::ColourAlpha fore;
@@ -898,7 +901,7 @@ protected:
 
 	void SetHomeProperties();
 	void UIAvailable();
-	void PerformOne(char *action);
+	void PerformOne(std::string_view action);
 	void StartRecordMacro();
 	void StopRecordMacro();
 	void StartPlayMacro();
@@ -907,7 +910,7 @@ protected:
 	void AskMacroList();
 	bool StartMacroList(const char *words);
 	void ContinueMacroList(const char *stext);
-	bool ProcessCommandLine(const GUI::gui_string &args, int phase);
+	bool ProcessCommandLine(const std::vector<GUI::gui_string> &args, int phase);
 	virtual bool IsStdinBlocked();
 	void OpenFromStdin(bool UseOutputPane);
 	void OpenFilesFromStdin();
@@ -919,7 +922,7 @@ protected:
 	void EnumProperties(const char *propkind);
 	void SendOneProperty(const char *kind, const char *key, const char *val);
 	void PropertyFromDirector(const char *arg);
-	void PropertyToDirector(const char *arg);
+	void PropertyToDirector(std::string_view arg);
 	// ExtensionAPI
 	intptr_t Send(Pane p, SA::Message msg, uintptr_t wParam = 0, intptr_t lParam = 0) override;
 	std::string Range(Pane p, SA::Span range) override;

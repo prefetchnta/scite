@@ -16,7 +16,7 @@ propsFileName = srcDir / "SciTEGlobal.properties"
 localeFileName = srcRoot / "win32" / "locale.properties"
 resourceFileName = srcRoot / "win32" / "SciTERes.rc"
 
-neutralEncoding = "cp437"	# Each byte value is valid in cp437
+neutralEncoding = "iso-8859-1"	# Each byte value is valid in iso-8859-1
 
 identCharacters = "_*." + string.ascii_letters + string.digits
 
@@ -179,9 +179,9 @@ for identifier in sorted(propertyNames - propertiesInGlobal - knownOutputAndLexe
 		print(identifier)
 
 print("\n# Missing localization of resource")
-for l in sorted(resourceSet):
-	if l.lower() not in localeSet:
-		print(l)
+for r in sorted(resourceSet):
+	if r.lower() not in localeSet:
+		print(r)
 
 print("\n# Duplicate properties")
 for property, files in sorted(propertyToFiles.items()):

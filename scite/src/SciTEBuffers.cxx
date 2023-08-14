@@ -712,7 +712,7 @@ void SciTEBase::RestoreSession() {
 		bufferState.file.Set(GUI::StringFromUTF8(propStr));
 
 		propKey = IndexPropKey("buffer", i, "current");
-		if (propsSession.GetInt(propKey.c_str()))
+		if (propsSession.GetInt(propKey))
 			session.pathActive = bufferState.file;
 
 		propKey = IndexPropKey("buffer", i, "scroll");
@@ -861,32 +861,27 @@ void SciTEBase::SaveSessionFile(const GUI::gui_char *sessionName) {
 
 void SciTEBase::SetIndentSettings() {
 	// Get default values
-	const int useTabs = props.GetInt("use.tabs", 1);
-	const int tabSize = props.GetInt("tabsize");
-	const int indentSize = props.GetInt("indent.size");
+	const int useTabsDefault = props.GetInt("use.tabs", 1);
+	const int tabSizeDefault = props.GetInt("tabsize");
+	const int indentSizeDefault = props.GetInt("indent.size");
+
 	// Either set the settings related to the extension or the default ones
-	std::string fileNameForExtension = ExtensionFileName();
-	std::string useTabsChars = props.GetNewExpandString("use.tabs.",
+	const std::string fileNameForExtension = ExtensionFileName();
+
+	const std::string useTabsChars = props.GetNewExpandString("use.tabs.",
 				   fileNameForExtension);
-	if (useTabsChars.length() != 0) {
-		wEditor.SetUseTabs(atoi(useTabsChars.c_str()));
-	} else {
-		wEditor.SetUseTabs(useTabs);
-	}
-	std::string tabSizeForExt = props.GetNewExpandString("tab.size.",
+	const int useTabs = IntegerFromString(useTabsChars, useTabsDefault);
+	wEditor.SetUseTabs(useTabs);
+
+	const std::string tabSizeForExt = props.GetNewExpandString("tab.size.",
 				    fileNameForExtension);
-	if (tabSizeForExt.length() != 0) {
-		wEditor.SetTabWidth(atoi(tabSizeForExt.c_str()));
-	} else if (tabSize != 0) {
-		wEditor.SetTabWidth(tabSize);
-	}
-	std::string indentSizeForExt = props.GetNewExpandString("indent.size.",
+	const int tabSize = IntegerFromString(tabSizeForExt, tabSizeDefault);
+	wEditor.SetTabWidth(tabSize);
+
+	const std::string indentSizeForExt = props.GetNewExpandString("indent.size.",
 				       fileNameForExtension);
-	if (indentSizeForExt.length() != 0) {
-		wEditor.SetIndent(atoi(indentSizeForExt.c_str()));
-	} else {
-		wEditor.SetIndent(indentSize);
-	}
+	const int indentSize = IntegerFromString(indentSizeForExt, indentSizeDefault);
+	wEditor.SetIndent(indentSize);
 }
 
 void SciTEBase::SetEol() {
@@ -1485,8 +1480,8 @@ void SciTEBase::RemoveToolsMenu() {
 }
 
 void SciTEBase::SetMenuItemLocalised(int menuNumber, int position, int itemID,
-				     const char *text, const char *mnemonic) {
-	GUI::gui_string localised = localiser.Text(text);
+				     std::string_view text, std::string_view mnemonic) {
+	const GUI::gui_string localised = localiser.Text(text);
 	SetMenuItem(menuNumber, position, itemID, localised.c_str(), GUI::StringFromUTF8(mnemonic).c_str());
 }
 
@@ -1499,7 +1494,7 @@ bool SciTEBase::ToolIsImmediate(int item) {
 
 	const std::string_view command = props.GetWild(propName, FileNameExt().AsUTF8());
 	if (command.length()) {
-		JobMode jobMode(props, item, FileNameExt().AsUTF8().c_str());
+		JobMode jobMode(props, item, FileNameExt().AsUTF8());
 		return jobMode.jobType == JobSubsystem::immediate;
 	}
 	return false;
@@ -1511,23 +1506,18 @@ void SciTEBase::SetToolsMenu() {
 	RemoveToolsMenu();
 	int menuPos = TOOLS_START;
 	for (int item = 0; item < toolMax; item++) {
-		const int itemID = IDM_TOOLS + item;
-		std::string prefix = "command.name.";
-		prefix += StdStringFromInteger(item);
-		prefix += ".";
-		std::string commandName = props.GetNewExpandString(prefix, FileNameExt().AsUTF8());
-		if (commandName.length()) {
-			std::string sMenuItem = commandName;
-			prefix = "command.shortcut.";
-			prefix += StdStringFromInteger(item);
-			prefix += ".";
-			std::string sMnemonic = props.GetNewExpandString(prefix, FileNameExt().AsUTF8());
-			if (item < 10 && sMnemonic.length() == 0) {
-				sMnemonic += "Ctrl+";
-				sMnemonic += StdStringFromInteger(item);
+		const std::string itemText = StdStringFromInteger(item);
+		const std::string itemSuffix = itemText + ".";
+		const std::string commandNamePrefix = "command.name." + itemSuffix;
+		const std::string commandName = props.GetNewExpandString(commandNamePrefix, FileNameExt().AsUTF8());
+		if (!commandName.empty()) {
+			const std::string shortcutPrefix = "command.shortcut." + itemSuffix;
+			std::string sMnemonic = props.GetNewExpandString(shortcutPrefix, FileNameExt().AsUTF8());
+			if (item < 10 && sMnemonic.empty()) {
+				sMnemonic = "Ctrl+" + itemText;
 			}
-			SetMenuItemLocalised(menuTools, menuPos, itemID, sMenuItem.c_str(),
-					     sMnemonic.length() ? sMnemonic.c_str() : nullptr);
+			const int itemID = IDM_TOOLS + item;
+			SetMenuItemLocalised(menuTools, menuPos, itemID, commandName, sMnemonic);
 			menuPos++;
 		}
 	}
@@ -1563,7 +1553,7 @@ void SciTEBase::ToolsMenu(int item) {
 	const std::string propName = std::string("command.") + itemSuffix;
 	std::string command(props.GetWild(propName, FileNameExt().AsUTF8()));
 	if (command.length()) {
-		JobMode jobMode(props, item, FileNameExt().AsUTF8().c_str());
+		JobMode jobMode(props, item, FileNameExt().AsUTF8());
 		if (jobQueue.IsExecuting() && (jobMode.jobType != JobSubsystem::immediate))
 			// Busy running a tool and running a second can cause failures.
 			return;
@@ -1916,6 +1906,14 @@ static SA::Line DecodeMessage(const char *cdoc, std::string &sourcePath, int for
 			break;
 		}
 
+	case SCE_ERR_BASH: {
+			const char *bashDiagnosticMark = ": line ";
+			const char *line = strstr(cdoc, bashDiagnosticMark);
+			sourcePath.assign(cdoc, line);
+			const SA::Line sourceNumber = IntegerFromText(line + strlen(bashDiagnosticMark)) - 1;
+			return sourceNumber;
+		}
+
 	case SCE_ERR_DIFF_MESSAGE: {
 			// Diff file header, either +++ <filename> or --- <filename>, may be followed by \t
 			// Often followed by a position line @@ <linenumber>
@@ -2094,13 +2092,11 @@ void SciTEBase::GoMessage(int dir) {
 
 				// If ctag then get line number after search tag or use ctag line number
 				if (style == SCE_ERR_CTAG) {
-					//without following focus GetCTag wouldn't work correct
-					WindowSetFocus(wOutput);
-					std::string cTag = GetCTag();
-					if (cTag.length() != 0) {
-						if (atoi(cTag.c_str()) > 0) {
+					const std::string cTag = GetCTag(&wOutput);
+					if (!cTag.empty()) {
+						if (IsADigit(cTag[0])) {
 							//if tag is linenumber, get line
-							sourceLine = IntegerFromText(cTag.c_str()) - 1;
+							sourceLine = IntPtrFromString(cTag, 0) - 1;
 						} else {
 							findWhat = cTag;
 							FindNext(false);

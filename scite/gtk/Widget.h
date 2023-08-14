@@ -6,6 +6,28 @@
 #ifndef WIDGET_H
 #define WIDGET_H
 
+// GObject
+
+struct GObjectReleaser {
+	// Called by unique_ptr to destroy/free the object
+	template <class T>
+	void operator()(T *object) noexcept {
+		g_object_unref(object);
+	}
+};
+
+// Pango
+
+using UniquePangoLayout = std::unique_ptr<PangoLayout, GObjectReleaser>;
+using UniquePixbuf = std::unique_ptr<GdkPixbuf, GObjectReleaser>;
+using UniqueSettings = std::unique_ptr<GtkSettings, GObjectReleaser>;
+using UniquePrintSettings = std::unique_ptr<GtkPrintSettings, GObjectReleaser>;
+using UniquePageSetup = std::unique_ptr<GtkPageSetup, GObjectReleaser>;
+using UniquePrintOperation = std::unique_ptr<GtkPrintOperation, GObjectReleaser>;
+#if GTK_CHECK_VERSION(3,0,0)
+using UniqueCssProvider = std::unique_ptr<GtkCssProvider, GObjectReleaser>;
+#endif
+
 // Callback thunk class connects GTK signals to an instance method.
 template< class T, void (T::*method)() >
 class ObjectSignal {
@@ -48,7 +70,7 @@ public:
 	void ActivatesDefault();
 	const GUI::gui_char *Text();
 	int Value();
-	void SetText(GUI::gui_string text);
+	void SetText(const GUI::gui_string &text);
 	static void SetValid(GtkEntry *entry, bool valid);
 };
 

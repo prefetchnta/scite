@@ -23,7 +23,7 @@ public:
 
 class PropSetFile {
 	bool lowerKeys;
-	std::string_view GetWildUsingStart(const PropSetFile &psStart, std::string_view keybase, std::string_view filename);
+	std::string_view GetWildUsingStart(const PropSetFile &psStart, std::string_view keybase, std::string_view filename) const;
 	static bool caseSensitiveFilenames;
 	mapss props;
 public:
@@ -49,14 +49,14 @@ public:
 	enum class ReadLineState { active, excludedModule, conditionFalse };
 	ReadLineState ReadLine(const char *lineBuffer, ReadLineState rls, const FilePath &directoryForImports, const ImportFilter &filter,
 			       FilePathSet *imports, size_t depth);
-	void ReadFromMemory(const char *data, size_t len, const FilePath &directoryForImports, const ImportFilter &filter,
+	void ReadFromMemory(std::string_view data, const FilePath &directoryForImports, const ImportFilter &filter,
 			    FilePathSet *imports, size_t depth);
 	void Import(const FilePath &filename, const FilePath &directoryForImports, const ImportFilter &filter,
 		    FilePathSet *imports, size_t depth);
 	bool Read(const FilePath &filename, const FilePath &directoryForImports, const ImportFilter &filter,
 		  FilePathSet *imports, size_t depth);
-	std::string_view GetWild(std::string_view keybase, std::string_view filename);
-	std::string GetNewExpandString(std::string_view keybase, std::string_view filename = "");
+	std::string_view GetWild(std::string_view keybase, std::string_view filename) const;
+	std::string GetNewExpandString(std::string_view keybase, std::string_view filename = "") const;
 	bool GetFirst(const char *&key, const char *&val) const;
 	bool GetNext(const char *&key, const char *&val) const;
 	static void SetCaseSensitiveFilenames(bool caseSensitiveFilenames_) noexcept {

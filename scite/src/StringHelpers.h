@@ -59,6 +59,10 @@ constexpr bool IsASpace(int ch) noexcept {
 	return (ch == ' ') || ((ch >= 0x09) && (ch <= 0x0d));
 }
 
+constexpr bool IsSpaceOrTab(int ch) noexcept {
+	return (ch == ' ') || (ch == '\t');
+}
+
 constexpr bool IsADigit(int ch) noexcept {
 	return (ch >= '0') && (ch <= '9');
 }
@@ -104,6 +108,8 @@ std::vector<T> StringSplit(const T &text, int separator) {
 inline std::vector<GUI::gui_string> ListFromString(const GUI::gui_string &args) {
 	return StringSplit(args, '\n');
 }
+
+std::set<std::string> SetFromString(std::string_view text, char separator);
 
 typedef std::tuple<std::string_view, std::string_view> ViewPair;
 

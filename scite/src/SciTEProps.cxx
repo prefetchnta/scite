@@ -13,6 +13,7 @@
 #include <ctime>
 #include <clocale>
 
+#include <stdexcept>
 #include <tuple>
 #include <string>
 #include <string_view>
@@ -100,7 +101,7 @@ void SciTEBase::SetLanguageMenu() {
 	}
 	for (unsigned int item = 0; item < languageMenu.size(); item++) {
 		const int itemID = languageCmdID + item;
-		const GUI::gui_string entry = localiser.Text(languageMenu[item].menuItem.c_str());
+		const GUI::gui_string entry = localiser.Text(languageMenu[item].menuItem);
 		const GUI::gui_string menuKey = GUI::StringFromUTF8(languageMenu[item].menuKey);
 		if (entry.size() && entry[0] != '#') {
 			SetMenuItem(menuLanguage, item, itemID, entry.c_str(), menuKey.c_str());
@@ -285,35 +286,6 @@ std::string StyleName(std::string_view language, int style, int subStyle) {
 void SciTEBase::SetElementColour(SA::Element element, const char *key) {
 	OptionalSetColour(wEditor, element, props, key);
 	OptionalSetColour(wOutput, element, props, key);
-}
-
-/**
- * Put the next property item from the given property string
- * into the buffer pointed by @a pPropItem.
- * @return NULL if the end of the list is met, else, it points to the next item.
- */
-const char *SciTEBase::GetNextPropItem(
-	const char *pStart,	/**< the property string to parse for the first call,
-						 * pointer returned by the previous call for the following. */
-	char *pPropItem,	///< pointer on a buffer receiving the requested prop item
-	size_t maxLen) noexcept {	///< size of the above buffer
-	ptrdiff_t size = maxLen - 1;
-
-	*pPropItem = '\0';
-	if (!pStart) {
-		return nullptr;
-	}
-	const char *pNext = strchr(pStart, ',');
-	if (pNext) {	// Separator is found
-		if (size > pNext - pStart) {
-			// Found string fits in buffer
-			size = pNext - pStart;
-		}
-		pNext++;
-	}
-	strncpy(pPropItem, pStart, size);
-	pPropItem[size] = '\0';
-	return pNext;
 }
 
 StyleDefinition SciTEBase::StyleDefinitionFor(int style) {
@@ -577,6 +549,12 @@ static const char *propertiesToForward[] = {
 	"lexer.as.comment.character",
 	"lexer.asm.comment.delimiter",
 	"lexer.baan.styling.within.preprocessor",
+	"lexer.bash.command.substitution",
+	"lexer.bash.special.parameter",
+	"lexer.bash.styling.inside.backticks",
+	"lexer.bash.styling.inside.heredoc",
+	"lexer.bash.styling.inside.parameter",
+	"lexer.bash.styling.inside.string",
 	"lexer.caml.magic",
 	"lexer.cpp.allow.dollars",
 	"lexer.cpp.backquoted.strings",
@@ -634,6 +612,7 @@ static const char *propertiesToForward[] = {
 	"lexer.tex.comment.process",
 	"lexer.tex.interface.default",
 	"lexer.tex.use.keywords",
+	"lexer.vb.strings.multiline",
 	"lexer.verilog.allupperkeywords",
 	"lexer.verilog.fold.preprocessor.else",
 	"lexer.verilog.portstyling",
@@ -875,7 +854,7 @@ void SciTEBase::ReadProperties() {
 			ssSubStylesKey += ".";
 			ssSubStylesKey += sStyleBase;
 			std::string ssNumber = props.GetNewExpandString(ssSubStylesKey);
-			int subStyleIdentifiers = atoi(ssNumber.c_str());
+			int subStyleIdentifiers = IntegerFromString(ssNumber, 0);
 
 			int subStyleIdentifiersStart = 0;
 			if (subStyleIdentifiers) {
@@ -1017,8 +996,9 @@ void SciTEBase::ReadProperties() {
 
 	const std::string caretPeriod = props.GetString("caret.period");
 	if (caretPeriod.length()) {
-		wEditor.SetCaretPeriod(atoi(caretPeriod.c_str()));
-		wOutput.SetCaretPeriod(atoi(caretPeriod.c_str()));
+		const int caretPeriodValue = IntegerFromString(caretPeriod, 0);
+		wEditor.SetCaretPeriod(caretPeriodValue);
+		wOutput.SetCaretPeriod(caretPeriodValue);
 	}
 
 	const int caretZoneX = props.GetInt("caret.policy.width", 50);
@@ -1165,11 +1145,8 @@ void SciTEBase::ReadProperties() {
 			static_cast<unsigned char>(autoCompleteTypeSeparator[0]));
 	}
 
-	sval = props.GetNewExpandString("autocomplete.*.ignorecase");
+	sval = FindLanguageProperty("autocomplete.*.ignorecase");
 	autoCompleteIgnoreCase = sval == "1";
-	sval = props.GetNewExpandString(Join("autocomplete.", "*", ".ignorecase"));
-	if (sval != "")
-		autoCompleteIgnoreCase = sval == "1";
 	wEditor.AutoCSetIgnoreCase(autoCompleteIgnoreCase);
 	wOutput.AutoCSetIgnoreCase(true);
 	autoCompleteVisibleItemCount = props.GetInt("autocomplete.visible.item.count", 9);
@@ -1211,9 +1188,7 @@ void SciTEBase::ReadProperties() {
 	wEditor.SetMarginWidthN(1, margin ? marginWidth : 0);
 
 	const std::string lineMarginProp = props.GetString("line.margin.width");
-	lineNumbersWidth = atoi(lineMarginProp.c_str());
-	if (lineNumbersWidth == 0)
-		lineNumbersWidth = lineNumbersWidthDefault;
+	lineNumbersWidth = IntegerFromString(lineMarginProp, lineNumbersWidthDefault);
 	lineNumbersExpand = lineMarginProp.find('+') != std::string::npos;
 
 	SetLineNumberWidth();
@@ -1251,7 +1226,7 @@ void SciTEBase::ReadProperties() {
 	}
 
 	const std::string viewIndentExamine = GetFileNameProperty("view.indentation.examine");
-	indentExamine = viewIndentExamine.length() ? static_cast<SA::IndentView>(atoi(viewIndentExamine.c_str())) : SA::IndentView::Real;
+	indentExamine = static_cast<SA::IndentView>(IntegerFromString(viewIndentExamine, 1));
 	wEditor.SetIndentationGuides(props.GetInt("view.indentation.guides") ?
 				     indentExamine : SA::IndentView::None);
 
@@ -1261,20 +1236,17 @@ void SciTEBase::ReadProperties() {
 	wEditor.CallTipUseStyle(32);
 
 	std::string useStripTrailingSpaces = props.GetNewExpandString("strip.trailing.spaces.", ExtensionFileName());
-	if (useStripTrailingSpaces.length() > 0) {
-		stripTrailingSpaces = atoi(useStripTrailingSpaces.c_str()) != 0;
-	} else {
-		stripTrailingSpaces = props.GetInt("strip.trailing.spaces") != 0;
-	}
+	stripTrailingSpaces = IntegerFromString(useStripTrailingSpaces, props.GetInt("strip.trailing.spaces")) != 0;
+
 	ensureFinalLineEnd = props.GetInt("ensure.final.line.end") != 0;
 	ensureConsistentLineEnds = props.GetInt("ensure.consistent.line.ends") != 0;
 
 	indentOpening = props.GetInt("indent.opening");
 	indentClosing = props.GetInt("indent.closing");
-	indentMaintain = atoi(props.GetNewExpandString("indent.maintain.", fileNameForExtension).c_str());
+	indentMaintain = IntegerFromString(props.GetNewExpandString("indent.maintain.", fileNameForExtension), 0);
 
 	const std::string lookback = props.GetNewExpandString("statement.lookback.", fileNameForExtension);
-	statementLookback = atoi(lookback.c_str());
+	statementLookback = IntegerFromString(lookback, 0);
 	statementIndent = GetStyleAndWords("statement.indent.");
 	statementEnd = GetStyleAndWords("statement.end.");
 	blockStart = GetStyleAndWords("block.start.");
@@ -1436,10 +1408,10 @@ void SciTEBase::ReadProperties() {
 
 	const int foldStrokeWidth = props.GetInt("fold.stroke.width", 100);
 	// Isolated and connected fold markers use foreground and background colours differently
-	MarkerAppearance isolated {
+	const MarkerAppearance isolated {
 		colourFoldFore, colourFoldBack, colourFoldBlockHighlight, foldStrokeWidth
 	};
-	MarkerAppearance connected {
+	const MarkerAppearance connected {
 		colourFoldBack, colourFoldFore, colourFoldBlockHighlight, foldStrokeWidth
 	};
 	switch (foldSymbols) {
@@ -1673,7 +1645,7 @@ void SciTEBase::ReadEditorConfig(const std::string &fileNameForExtension) {
 			diagnostic += "=";
 			diagnostic += pss.second;
 			diagnostic += "'.\n";
-			OutputAppendString(diagnostic.c_str());
+			OutputAppendString(diagnostic);
 			SetOutputVisibility(true);
 		}
 	}
@@ -2046,5 +2018,5 @@ int SciTEBase::GetMenuCommandAsInt(const std::string &commandName) {
 	}
 
 	// Otherwise we might have entered a number as command to access a "SCI_" command
-	return atoi(commandName.c_str());
+	return IntegerFromString(commandName, 0);
 }

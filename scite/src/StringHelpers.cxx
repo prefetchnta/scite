@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <functional>
 #include <chrono>
@@ -128,6 +129,23 @@ void LowerCaseAZ(std::string &s) {
 
 intptr_t IntegerFromText(const char *s) noexcept {
 	return static_cast<intptr_t>(atoll(s));
+}
+
+std::set<std::string> SetFromString(std::string_view text, char separator) {
+	std::set<std::string> result;
+
+	while (!text.empty()) {
+		const size_t after = text.find_first_of(separator);
+		const std::string_view symbol(text.substr(0, after));
+		if (!symbol.empty()) {
+			result.emplace(symbol);
+		}
+		if (after == std::string_view::npos) {
+			break;
+		}
+		text.remove_prefix(after + 1);
+	}
+	return result;
 }
 
 int CompareNoCase(const char *a, const char *b) noexcept {

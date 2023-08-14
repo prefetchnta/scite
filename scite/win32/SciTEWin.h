@@ -260,9 +260,9 @@ protected:
 
 	int DoDialog(const TCHAR *resName, DLGPROC lpProc);
 	HWND CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc) noexcept;
-	GUI::gui_string DialogFilterFromProperty(const GUI::gui_char *filterProperty);
+	GUI::gui_string DialogFilterFromProperty(const GUI::gui_string &filterProperty);
 	void CheckCommonDialogError();
-	bool OpenDialog(const FilePath &directory, const GUI::gui_char *filesFilter) override;
+	bool OpenDialog(const FilePath &directory, const GUI::gui_string &filesFilter) override;
 	FilePath ChooseSaveName(const FilePath &directory, const char *title,
 				const GUI::gui_char *filesFilter = nullptr, const char *ext = nullptr);
 	bool SaveAsDialog() override;
@@ -274,7 +274,7 @@ protected:
 	void SaveAsXML() override;
 	void LoadSessionDialog() override;
 	void SaveSessionDialog() override;
-	bool PreOpenCheck(const GUI::gui_char *arg) override;
+	bool PreOpenCheck(const GUI::gui_string &file) override;
 	bool IsStdinBlocked() override;
 
 	/// Print the current buffer.
@@ -293,7 +293,7 @@ protected:
 	void SettingChanged(WPARAM wParam, LPARAM lParam);
 	void SysColourChanged(WPARAM wParam, LPARAM lParam);
 	void ScaleChanged(WPARAM wParam, LPARAM lParam);
-	static GUI::gui_string ProcessArgs(const GUI::gui_char *cmdLine);
+	static std::vector<GUI::gui_string> ProcessArgs(GUI::gui_string_view cmdLine);
 	void QuitProgram() override;
 
 	FilePath GetDefaultDirectory() override;

@@ -51,7 +51,7 @@ JobSubsystem SubsystemFromChar(char c) noexcept {
 	return JobSubsystem::cli;
 }
 
-JobMode::JobMode(PropSetFile &props, int item, const char *fileNameExt) : jobType(JobSubsystem::cli), saveBefore(0), isFilter(false), flags(0) {
+JobMode::JobMode(const PropSetFile &props, int item, std::string_view fileNameExt) : jobType(JobSubsystem::cli), saveBefore(0), isFilter(false), flags(0) {
 	bool quiet = false;
 	int repSel = 0;
 	bool groupUndo = false;
@@ -138,8 +138,7 @@ JobMode::JobMode(PropSetFile &props, int item, const char *fileNameExt) : jobTyp
 
 	propName = "command.save.before.";
 	propName += itemSuffix;
-	if (props.GetWild(propName, fileNameExt).length())
-		saveBefore = atoi(props.GetNewExpandString(propName, fileNameExt).c_str());
+	saveBefore = IntegerFromString(props.GetNewExpandString(propName, fileNameExt), saveBefore);
 
 	propName = "command.is.filter.";
 	propName += itemSuffix;
@@ -169,8 +168,7 @@ JobMode::JobMode(PropSetFile &props, int item, const char *fileNameExt) : jobTyp
 
 	propName = "command.replace.selection.";
 	propName += itemSuffix;
-	if (props.GetWild(propName, fileNameExt).length())
-		repSel = atoi(props.GetNewExpandString(propName, fileNameExt).c_str());
+	repSel = IntegerFromString(props.GetNewExpandString(propName, fileNameExt), repSel);
 
 	if (repSel == 1)
 		flags |= jobRepSelYes;

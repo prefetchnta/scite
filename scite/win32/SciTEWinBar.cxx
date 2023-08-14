@@ -320,7 +320,7 @@ void SciTEWin::Notify(SCNotification *notification) {
 				break;
 			}
 			if (ttext) {
-				GUI::gui_string localised = localiser.Text(GUI::UTF8FromString(ttext).c_str());
+				GUI::gui_string localised = localiser.Text(GUI::UTF8FromString(ttext));
 				StringCopy(tooltipText, localised.c_str());
 				pDispInfo->lpszText = tooltipText;
 			}
@@ -441,7 +441,7 @@ void SciTEWin::SizeSubWindows() {
 					    rcClient.right, rcClient.top + heightTab + visHeightTools));
 	}
 
-	RECT r = { rcClient.left, 0, rcClient.right, 0 };
+	const RECT r = { rcClient.left, 0, rcClient.right, 0 };
 	TabCtrl_AdjustRect(HwndOf(wTabBar), TRUE, &r);
 	bands[bandTab].height = r.bottom - r.top - 4;
 
@@ -520,7 +520,7 @@ void SciTEWin::SetMenuItem(int menuNumber, int position, int itemID,
 	GUI::gui_string sTextMnemonic = text;
 	long keycode = 0;
 	if (mnemonic && *mnemonic) {
-		keycode = SciTEKeys::ParseKeyCode(GUI::UTF8FromString(mnemonic).c_str());
+		keycode = SciTEKeys::ParseKeyCode(GUI::UTF8FromString(mnemonic));
 		if (keycode) {
 			sTextMnemonic += GUI_TEXT("\t");
 			sTextMnemonic += mnemonic;
@@ -596,13 +596,17 @@ void SciTEWin::CheckMenus() {
 
 void SciTEWin::LocaliseMenu(HMENU hmenu) {
 	for (int i = 0; i <= ::GetMenuItemCount(hmenu); i++) {
-		GUI::gui_char buff[200] {};
 		MENUITEMINFOW mii {};
 		mii.cbSize = sizeof(mii);
 		mii.fMask = MIIM_CHECKMARKS | MIIM_DATA | MIIM_ID |
 			    MIIM_STATE | MIIM_SUBMENU | MIIM_TYPE;
-		mii.dwTypeData = buff;
-		mii.cch = sizeof(buff) - 1;
+		mii.dwTypeData = nullptr;
+		if (!::GetMenuItemInfoW(hmenu, i, TRUE, &mii)) {
+			continue;
+		}
+		GUI::gui_string buff(mii.cch, 0);
+		mii.dwTypeData = buff.data();
+		mii.cch++;
 		if (::GetMenuItemInfoW(hmenu, i, TRUE, &mii)) {
 			if (mii.hSubMenu) {
 				LocaliseMenu(mii.hSubMenu);
@@ -619,7 +623,7 @@ void SciTEWin::LocaliseMenu(HMENU hmenu) {
 					} else {
 						accel = GUI_TEXT("");
 					}
-					text = localiser.Text(GUI::UTF8FromString(text).c_str(), true);
+					text = localiser.Text(GUI::UTF8FromString(text), true);
 					if (text.length()) {
 						if (accel != GUI_TEXT("")) {
 							text += GUI_TEXT("\t");
@@ -642,7 +646,7 @@ void SciTEWin::LocaliseMenus() {
 
 void SciTEWin::LocaliseControl(HWND w) {
 	std::string originalText = GUI::UTF8FromString(TextOfWindow(w));
-	GUI::gui_string translatedText = localiser.Text(originalText.c_str(), false);
+	GUI::gui_string translatedText = localiser.Text(originalText, false);
 	if (translatedText.length())
 		::SetWindowTextW(w, translatedText.c_str());
 }
@@ -791,7 +795,7 @@ static LRESULT PASCAL TabWndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM
 				const GUI::Point ptClient = ClientFromScreen(hWnd, PointOfCursor());
 				const int tab = TabAtPoint(hWnd, ptClient);
 
-				RECT tabrc {};
+				const RECT tabrc {};
 				if (tab != -1 &&
 						tab != iDraggingTab &&
 						TabCtrl_GetItemRect(hWnd, tab, &tabrc)) {

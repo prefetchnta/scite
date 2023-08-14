@@ -204,29 +204,29 @@ HWND SciTEWin::CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc)
 				    reinterpret_cast<LPARAM>(this));
 }
 
-GUI::gui_string SciTEWin::DialogFilterFromProperty(const GUI::gui_char *filterProperty) {
-	GUI::gui_string filterText = filterProperty;
-	if (filterText.length()) {
-		std::replace(filterText.begin(), filterText.end(), '|', '\0');
-		size_t start = 0;
-		while (start < filterText.length()) {
-			const GUI::gui_char *filterName = filterText.c_str() + start;
-			if (*filterName == '#') {
-				size_t next = start + wcslen(filterText.c_str() + start) + 1;
-				next += wcslen(filterText.c_str() + next) + 1;
-				filterText.erase(start, next - start);
-			} else {
-				GUI::gui_string localised = localiser.Text(GUI::UTF8FromString(filterName).c_str(), false);
+GUI::gui_string SciTEWin::DialogFilterFromProperty(const GUI::gui_string &filterProperty) {
+	std::vector<GUI::gui_string> transformed;
+	if (filterProperty.length()) {
+		const std::vector<GUI::gui_string> filters = StringSplit(filterProperty, GUI_TEXT('|'));
+		for (size_t i = 0; i < filters.size()-1; i+=2) {
+			if (!StartsWith(filters[i], GUI_TEXT("#"))) {
+				const GUI::gui_string localised = localiser.Text(GUI::UTF8FromString(filters[i]), false);
 				if (localised.size()) {
-					filterText.erase(start, wcslen(filterName));
-					filterText.insert(start, localised);
+					transformed.push_back(localised);
+				} else {
+					transformed.push_back(filters[i]);
 				}
-				start += wcslen(filterText.c_str() + start) + 1;
-				start += wcslen(filterText.c_str() + start) + 1;
+				transformed.push_back(filters[i+1]);
 			}
 		}
 	}
-	return filterText;
+	GUI::gui_string filterString;
+	for (const GUI::gui_string &s : transformed) {
+		filterString.append(s);
+		filterString.append(1, GUI_TEXT('\0'));
+	}
+	filterString.append(1, GUI_TEXT('\0'));	// Ensure double terminated
+	return filterString;
 }
 
 void SciTEWin::CheckCommonDialogError() {
@@ -238,7 +238,7 @@ void SciTEWin::CheckCommonDialogError() {
 	}
 }
 
-bool SciTEWin::OpenDialog(const FilePath &directory, const GUI::gui_char *filesFilter) {
+bool SciTEWin::OpenDialog(const FilePath &directory, const GUI::gui_string &filesFilter) {
 	enum {maxBufferSize=2048};
 
 	DWORD filterDefault = 1;
@@ -313,7 +313,7 @@ FilePath SciTEWin::ChooseSaveName(const FilePath &directory, const char *title, 
 	FilePath path;
 	if (0 == dialogsOnScreen) {
 		GUI::gui_char saveName[MAX_PATH] = GUI_TEXT("");
-		FilePath savePath = SaveName(ext);
+		const FilePath savePath = SaveName(ext);
 		if (!savePath.IsUntitled()) {
 			StringCopy(saveName, savePath.AsInternal());
 		}
@@ -342,7 +342,7 @@ FilePath SciTEWin::ChooseSaveName(const FilePath &directory, const char *title, 
 
 bool SciTEWin::SaveAsDialog() {
 	GUI::gui_string saveFilter = DialogFilterFromProperty(
-					     GUI::StringFromUTF8(props.GetExpandedString("save.filter")).c_str());
+					     GUI::StringFromUTF8(props.GetExpandedString("save.filter")));
 	FilePath path = ChooseSaveName(filePath.Directory(), "Save File", saveFilter.c_str());
 	if (path.IsSet()) {
 		return SaveIfNotOpen(path, false);
@@ -574,7 +574,7 @@ void SciTEWin::Print(
 	TEXTMETRIC tm {};
 
 	std::string headerStyle = props.GetString("print.header.style");
-	StyleDefinition sdHeader(headerStyle.c_str());
+	StyleDefinition sdHeader(headerStyle);
 
 	int headerLineHeight = ::MulDiv(
 				       (sdHeader.specified & StyleDefinition::sdSize) ? sdHeader.size : 9,
@@ -592,7 +592,7 @@ void SciTEWin::Print(
 	headerLineHeight = tm.tmHeight + tm.tmExternalLeading;
 
 	std::string footerStyle = props.GetString("print.footer.style");
-	StyleDefinition sdFooter(footerStyle.c_str());
+	StyleDefinition sdFooter(footerStyle);
 
 	int footerLineHeight = ::MulDiv(
 				       (sdFooter.specified & StyleDefinition::sdSize) ? sdFooter.size : 9,
@@ -785,12 +785,8 @@ public:
 		return TextOfWindow(Item(id));
 	}
 
-	void SetItemText(int id, const GUI::gui_char *s) noexcept {
-		::SetDlgItemTextW(hDlg, id, s);
-	}
-
 	void SetItemText(int id, const GUI::gui_string &s) noexcept {
-		SetItemText(id, s.c_str());
+		::SetDlgItemTextW(hDlg, id, s.c_str());
 	}
 
 	// Handle Unicode controls (assume strings to be UTF-8 on Windows NT)
@@ -914,7 +910,7 @@ void DialogFindReplace::GrabFields() {
 	pSearcher->contextVisible = Checked(IDCONTEXTVISIBLE);
 	if (advanced) {
 		pSearcher->findInStyle = Checked(IDFINDINSTYLE);
-		pSearcher->findStyle = atoi(ItemTextU(IDFINDSTYLE).c_str());
+		pSearcher->findStyle = IntegerFromString(ItemTextU(IDFINDSTYLE), 0);
 	}
 }
 
@@ -1616,14 +1612,14 @@ BOOL SciTEWin::ParametersMessage(HWND hDlg, UINT message, WPARAM wParam) {
 			wParameters = hDlg;
 			Dialog dlg(hDlg);
 			if (modalParameters) {
-				GUI::gui_string sCommand = GUI::StringFromUTF8(parameterisedCommand);
-				dlg.SetItemText(IDCMD, sCommand.c_str());
+				const GUI::gui_string sCommand = GUI::StringFromUTF8(parameterisedCommand);
+				dlg.SetItemText(IDCMD, sCommand);
 			}
 			for (int param = 0; param < maxParam; param++) {
 				std::string paramText = StdStringFromInteger(param + 1);
 				std::string paramTextVal = props.GetString(paramText);
-				GUI::gui_string sVal = GUI::StringFromUTF8(paramTextVal);
-				dlg.SetItemText(IDPARAMSTART + param, sVal.c_str());
+				const GUI::gui_string sVal = GUI::StringFromUTF8(paramTextVal);
+				dlg.SetItemText(IDPARAMSTART + param, sVal);
 			}
 		}
 		return TRUE;

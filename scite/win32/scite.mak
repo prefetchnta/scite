@@ -50,7 +50,7 @@ CXXNDEBUG=-O2 -Oi -MT -DNDEBUG -GL
 NAME=-Fo
 LDFLAGS=-OPT:REF -LTCG $(SUBSYSTEM) $(CETCOMPAT)
 LDDEBUG=
-LIBS=KERNEL32.lib USER32.lib GDI32.lib MSIMG32.lib COMDLG32.lib COMCTL32.lib ADVAPI32.lib IMM32.lib SHELL32.LIB OLE32.LIB OLEAUT32.LIB UXTHEME.LIB
+LIBS=KERNEL32.lib USER32.lib GDI32.lib COMDLG32.lib COMCTL32.lib ADVAPI32.lib IMM32.lib SHELL32.LIB OLE32.LIB OLEAUT32.LIB UXTHEME.LIB
 NOLOGO=-nologo
 
 !IFDEF QUIET
@@ -135,23 +135,22 @@ $(DIR_BIN)\escript.properties $(DIR_BIN)\flagship.properties \
 $(DIR_BIN)\forth.properties $(DIR_BIN)\fortran.properties \
 $(DIR_BIN)\freebasic.properties $(DIR_BIN)\fsharp.properties \
 $(DIR_BIN)\gap.properties $(DIR_BIN)\haskell.properties \
-$(DIR_BIN)\hex.properties $(DIR_BIN)\html.properties \
-$(DIR_BIN)\inno.properties $(DIR_BIN)\json.properties \
-$(DIR_BIN)\kix.properties $(DIR_BIN)\latex.properties \
-$(DIR_BIN)\lisp.properties $(DIR_BIN)\lot.properties \
-$(DIR_BIN)\lout.properties $(DIR_BIN)\lua.properties \
+$(DIR_BIN)\hex.properties $(DIR_BIN)\hollywood.properties \
+$(DIR_BIN)\html.properties $(DIR_BIN)\inno.properties \
+$(DIR_BIN)\json.properties $(DIR_BIN)\kix.properties \
+$(DIR_BIN)\latex.properties $(DIR_BIN)\lisp.properties \
+$(DIR_BIN)\lot.properties $(DIR_BIN)\lout.properties $(DIR_BIN)\lua.properties \
 $(DIR_BIN)\markdown.properties $(DIR_BIN)\matlab.properties \
 $(DIR_BIN)\maxima.properties $(DIR_BIN)\metapost.properties \
 $(DIR_BIN)\mmixal.properties $(DIR_BIN)\modula3.properties \
-$(DIR_BIN)\nim.properties $(DIR_BIN)\nimrod.properties \
-$(DIR_BIN)\nncrontab.properties $(DIR_BIN)\nsis.properties \
-$(DIR_BIN)\opal.properties $(DIR_BIN)\oscript.properties \
-$(DIR_BIN)\others.properties $(DIR_BIN)\pascal.properties \
-$(DIR_BIN)\perl.properties $(DIR_BIN)\pov.properties \
-$(DIR_BIN)\powerpro.properties $(DIR_BIN)\powershell.properties \
-$(DIR_BIN)\ps.properties $(DIR_BIN)\purebasic.properties \
-$(DIR_BIN)\python.properties $(DIR_BIN)\r.properties \
-$(DIR_BIN)\raku.properties $(DIR_BIN)\rebol.properties \
+$(DIR_BIN)\nim.properties $(DIR_BIN)\nncrontab.properties \
+$(DIR_BIN)\nsis.properties $(DIR_BIN)\opal.properties \
+$(DIR_BIN)\oscript.properties $(DIR_BIN)\others.properties \
+$(DIR_BIN)\pascal.properties $(DIR_BIN)\perl.properties \
+$(DIR_BIN)\pov.properties $(DIR_BIN)\powerpro.properties \
+$(DIR_BIN)\powershell.properties $(DIR_BIN)\ps.properties \
+$(DIR_BIN)\purebasic.properties $(DIR_BIN)\python.properties \
+$(DIR_BIN)\r.properties $(DIR_BIN)\raku.properties $(DIR_BIN)\rebol.properties \
 $(DIR_BIN)\registry.properties $(DIR_BIN)\ruby.properties \
 $(DIR_BIN)\rust.properties $(DIR_BIN)\sas.properties \
 $(DIR_BIN)\scriptol.properties $(DIR_BIN)\smalltalk.properties \

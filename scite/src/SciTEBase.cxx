@@ -15,6 +15,7 @@
 #include <ctime>
 #include <cmath>
 
+#include <system_error>
 #include <tuple>
 #include <string>
 #include <string_view>
@@ -119,6 +120,66 @@ bool &Searcher::FlagFromCmd(int cmd) noexcept {
 		return contextVisible;
 	}
 	return notFound;
+}
+
+StyleAndWords::StyleAndWords() noexcept {
+};
+
+// Set of words separated by spaces. First is style number, rest are symbols.
+// <styleNumber> [symbol]*
+StyleAndWords::StyleAndWords(const std::string &definition) {
+	styleNumber = IntegerFromString(definition, 0);
+
+	std::string_view symbols(definition);
+
+	// Remove initial style number
+	const size_t endNumber = symbols.find_first_of(' ');
+	if (endNumber == std::string::npos) {
+		return;
+	}
+	symbols.remove_prefix(endNumber + 1);
+
+	words = SetFromString(symbols, ' ');
+}
+
+bool StyleAndWords::IsEmpty() const noexcept {
+	return words.empty();
+}
+
+bool StyleAndWords::IsSingleChar() const noexcept {
+	if (words.size() != 1) {
+		return false;
+	}
+	const std::string &first = *words.begin();
+	return first.length() == 1;
+}
+
+bool StyleAndWords::IsCharacter(char ch) const noexcept {
+	if (words.size() != 1) {
+		return false;
+	}
+	const std::string &first = *words.begin();
+	return (first.length() == 1) && (ch == first[0]);
+}
+
+int StyleAndWords::Style() const noexcept {
+	return styleNumber;
+}
+
+bool StyleAndWords::Includes(const std::string &value) const {
+	if (words.empty()) {
+		return false;
+	}
+	const std::string &first = *words.begin();
+	if (first.empty()) {
+		return false;
+	}
+	if (IsAlphabetic(first[0])) {
+		return words.count(value) != 0;
+	}
+	// Set of individual characters. Only one character allowed for now
+	const char ch = first[0];
+	return value.find(ch) != std::string::npos;
 }
 
 SciTEBase::SciTEBase(Extension *ext) : apis(true), pwFocussed(&wEditor), extender(ext) {
@@ -333,14 +394,9 @@ void SciTEBase::ViewWhitespace(bool view) {
 }
 
 StyleAndWords SciTEBase::GetStyleAndWords(const char *base) {
-	StyleAndWords sw;
-	std::string fileNameForExtension = ExtensionFileName();
-	std::string sAndW = props.GetNewExpandString(base, fileNameForExtension);
-	sw.styleNumber = atoi(sAndW.c_str());
-	const char *space = strchr(sAndW.c_str(), ' ');
-	if (space)
-		sw.words = space + 1;
-	return sw;
+	const std::string fileNameForExtension = ExtensionFileName();
+	const std::string sAndW = props.GetNewExpandString(base, fileNameForExtension);
+	return StyleAndWords(sAndW);
 }
 
 void SciTEBase::AssignKey(SA::Keys key, SA::KeyMod mods, int cmd) {
@@ -683,11 +739,11 @@ void SciTEBase::SetSelection(SA::Position anchor, SA::Position currentPos) {
 	wEditor.SetSel(anchor, currentPos);
 }
 
-std::string SciTEBase::GetCTag() {
-	const SA::Position lengthDoc = pwFocussed->Length();
-	SA::Position selEnd = pwFocussed->SelectionEnd();
+std::string SciTEBase::GetCTag(GUI::ScintillaWindow *pw) {
+	const SA::Position lengthDoc = pw->Length();
+	SA::Position selEnd = pw->SelectionEnd();
 	SA::Position selStart = selEnd;
-	TextReader acc(*pwFocussed);
+	TextReader acc(*pw);
 	int mustStop = 0;
 	while (!mustStop) {
 		if (selStart < lengthDoc - 1) {
@@ -728,7 +784,7 @@ std::string SciTEBase::GetCTag() {
 	}
 
 	if (selStart < selEnd) {
-		return pwFocussed->StringOfSpan(SA::Span(selStart, selEnd));
+		return pw->StringOfSpan(SA::Span(selStart, selEnd));
 	} else {
 		return std::string();
 	}
@@ -1362,10 +1418,8 @@ void SciTEBase::UIClosed() {
 void SciTEBase::UIHasFocus() {
 }
 
-void SciTEBase::OutputAppendString(const char *s, SA::Position len) {
-	if (len == -1)
-		len = strlen(s);
-	wOutput.AppendText(len, s);
+void SciTEBase::OutputAppendString(std::string_view s) {
+	wOutput.AppendText(s.length(), s.data());
 	if (scrollOutput) {
 		const SA::Line line = wOutput.LineCount();
 		const SA::Position lineStart = wOutput.LineStart(line);
@@ -1373,11 +1427,9 @@ void SciTEBase::OutputAppendString(const char *s, SA::Position len) {
 	}
 }
 
-void SciTEBase::OutputAppendStringSynchronised(const char *s, SA::Position len) {
+void SciTEBase::OutputAppendStringSynchronised(std::string_view s) {
 	// This may be called from secondary thread so always use Send instead of Call
-	if (len == -1)
-		len = strlen(s);
-	wOutput.Send(SCI_APPENDTEXT, len, SptrFromString(s));
+	wOutput.Send(SCI_APPENDTEXT, s.length(), SptrFromString(s.data()));
 	if (scrollOutput) {
 		const SA::Line line = wOutput.Send(SCI_GETLINECOUNT);
 		const SA::Position lineStart = wOutput.Send(SCI_POSITIONFROMLINE, line);
@@ -1573,7 +1625,7 @@ void SciTEBase::FillFunctionDefinition(SA::Position pos /*= -1*/) {
 		if (words.empty())
 			return;
 		// Counts how many call tips
-		maxCallTips = static_cast<int>(std::count(words.begin(), words.end(), ' ') + 1);
+		maxCallTips = std::count(words.begin(), words.end(), ' ') + 1;
 
 		// Should get current api definition
 		std::string word = apis.GetNearestWord(currentCallTipWord.c_str(), currentCallTipWord.length(),
@@ -2362,6 +2414,7 @@ void SciTEBase::UpdateStatusBar(bool bUpdateSlowData) {
 		propsStatus.Set("LineNumber", std::to_string(GetCurrentLineNumber() + 1));
 		propsStatus.Set("ColumnNumber", std::to_string(GetCurrentColumnNumber() + 1));
 		propsStatus.Set("OverType", wEditor.Overtype() ? "OVR" : "INS");
+		propsStatus.Set("ZoomFactor", std::to_string(wEditor.Zoom()));
 
 		const std::string sbKey = "statusbar.text." + std::to_string(sbNum);
 		std::string msg = propsStatus.GetExpandedString(sbKey);
@@ -2471,7 +2524,7 @@ std::vector<std::string> SciTEBase::GetLinePartsInStyle(SA::Line line, const Sty
 	const SA::Position thisLineStart = wEditor.LineStart(line);
 	const SA::Position nextLineStart = wEditor.LineStart(line + 1);
 	for (SA::Position pos = thisLineStart; pos < nextLineStart; pos++) {
-		if (acc.StyleAt(pos) == saw.styleNumber) {
+		if (acc.StyleAt(pos) == saw.Style()) {
 			if (separateCharacters) {
 				// Add one character at a time, even if there is an adjacent character in the same style
 				if (s.length() > 0) {
@@ -2491,54 +2544,25 @@ std::vector<std::string> SciTEBase::GetLinePartsInStyle(SA::Line line, const Sty
 	return sv;
 }
 
-static bool includes(const StyleAndWords &symbols, const std::string &value) {
-	if (symbols.words.length() == 0) {
-		return false;
-	} else if (IsAlphabetic(symbols.words[0])) {
-		// Set of symbols separated by spaces
-		const size_t lenVal = value.length();
-		const char *symbol = symbols.words.c_str();
-		while (symbol) {
-			const char *symbolEnd = strchr(symbol, ' ');
-			size_t lenSymbol = strlen(symbol);
-			if (symbolEnd)
-				lenSymbol = symbolEnd - symbol;
-			if (lenSymbol == lenVal) {
-				if (strncmp(symbol, value.c_str(), lenSymbol) == 0) {
-					return true;
-				}
-			}
-			symbol = symbolEnd;
-			if (symbol)
-				symbol++;
-		}
-	} else {
-		// Set of individual characters. Only one character allowed for now
-		const char ch = symbols.words[0];
-		return strchr(value.c_str(), ch) != nullptr;
-	}
-	return false;
-}
-
 IndentationStatus SciTEBase::GetIndentState(SA::Line line) {
 	// C like language indentation defined by braces and keywords
 	IndentationStatus indentState = IndentationStatus::none;
 	const std::vector<std::string> controlIndents = GetLinePartsInStyle(line, statementIndent);
 	for (const std::string &sIndent : controlIndents) {
-		if (includes(statementIndent, sIndent))
+		if (statementIndent.Includes(sIndent))
 			indentState = IndentationStatus::keyWordStart;
 	}
 	const std::vector<std::string> controlEnds = GetLinePartsInStyle(line, statementEnd);
 	for (const std::string &sEnd : controlEnds) {
-		if (includes(statementEnd, sEnd))
+		if (statementEnd.Includes(sEnd))
 			indentState = IndentationStatus::none;
 	}
 	// Braces override keywords
 	const std::vector<std::string> controlBlocks = GetLinePartsInStyle(line, blockEnd);
 	for (const std::string &sBlock : controlBlocks) {
-		if (includes(blockEnd, sBlock))
+		if (blockEnd.Includes(sBlock))
 			indentState = IndentationStatus::blockEnd;
-		if (includes(blockStart, sBlock))
+		if (blockStart.Includes(sBlock))
 			indentState = IndentationStatus::blockStart;
 	}
 	return indentState;
@@ -2642,7 +2666,7 @@ void SciTEBase::AutomaticIndentation(char ch) {
 		return;
 	}
 
-	if (blockEnd.IsSingleChar() && ch == blockEnd.words[0]) {	// Dedent maybe
+	if (blockEnd.IsCharacter(ch)) {	// Dedent maybe
 		if (!indentClosing) {
 			if (RangeIsAllWhitespace(thisLineStart, selStart - 1)) {
 				SetLineIndentation(curLine, indentBlock - indentSize);
@@ -2650,7 +2674,7 @@ void SciTEBase::AutomaticIndentation(char ch) {
 		}
 	} else if (!blockEnd.IsSingleChar() && (ch == ' ')) {	// Dedent maybe
 		if (!indentClosing && (GetIndentState(curLine) == IndentationStatus::blockEnd)) {}
-	} else if (blockStart.IsSingleChar() && (ch == blockStart.words[0])) {
+	} else if (blockStart.IsCharacter(ch)) {
 		// Dedent maybe if first on line and previous line was starting keyword
 		if (!indentOpening && (GetIndentState(curLine - 1) == IndentationStatus::keyWordStart)) {
 			if (RangeIsAllWhitespace(thisLineStart, selStart - 1)) {
@@ -2661,7 +2685,7 @@ void SciTEBase::AutomaticIndentation(char ch) {
 		if (!indentClosing && !blockEnd.IsSingleChar()) {	// Dedent previous line maybe
 			const std::vector<std::string> controlWords = GetLinePartsInStyle(curLine - 1, blockEnd);
 			if (!controlWords.empty()) {
-				if (includes(blockEnd, controlWords[0])) {
+				if (blockEnd.Includes(controlWords[0])) {
 					// Check if first keyword on line is an ender
 					SetLineIndentation(curLine - 1, IndentOfBlock(curLine - 2) - indentSize);
 					// Recalculate as may have changed previous line
@@ -3035,7 +3059,7 @@ void SciTEBase::MenuCommand(int cmdID, int source) {
 		// when doing the opening. Must be done there as user
 		// may decide to open multiple files so do not know yet
 		// how much room needed.
-		OpenDialog(filePath.Directory(), GUI::StringFromUTF8(props.GetExpandedString("open.filter")).c_str());
+		OpenDialog(filePath.Directory(), GUI::StringFromUTF8(props.GetExpandedString("open.filter")));
 		WindowSetFocus(wEditor);
 		break;
 	case IDM_OPENSELECTED:
@@ -4146,6 +4170,7 @@ void SciTEBase::Notify(SCNotification *notification) {
 
 	case SA::Notification::Zoom:
 		SetLineNumberWidth();
+		UpdateStatusBar(false);
 		break;
 
 	case SA::Notification::ModifyAttemptRO:
@@ -4339,54 +4364,62 @@ void SciTEBase::UIAvailable() {
 	}
 }
 
+namespace {
+
+constexpr bool IsNameCharacter(GUI::gui_char ch) {
+	return ch == '.' || IsAlphabetic(ch);
+}
+
 /**
  * Find the character following a name which is made up of characters from
  * the set [a-zA-Z.]
  */
-static GUI::gui_char AfterName(const GUI::gui_char *s) noexcept {
-	while (*s && ((*s == '.') ||
-			(*s >= 'a' && *s <= 'z') ||
-			(*s >= 'A' && *s <= 'Z')))
-		s++;
-	return *s;
+GUI::gui_char AfterName(GUI::gui_string_view s) noexcept {
+	while (!s.empty() && IsNameCharacter(s.front())) {
+		s.remove_prefix(1);
+	}
+	return s.empty() ? 0 : s.front();
 }
 
-void SciTEBase::PerformOne(char *action) {
-	const size_t len = UnSlash(action);
-	char *arg = strchr(action, ':');
-	if (arg) {
-		arg++;
-		if (isprefix(action, "askfilename:")) {
+}
+
+void SciTEBase::PerformOne(std::string_view action) {
+	const size_t colon = action.find(':');
+	if (colon != std::string::npos) {
+		const std::string_view cmd = action.substr(0, colon);
+		const std::string argument = UnSlashString(action.substr(colon+1));
+		const char *arg = argument.c_str();
+		if (cmd == "askfilename") {
 			extender->OnMacro("filename", filePath.AsUTF8().c_str());
-		} else if (isprefix(action, "askproperty:")) {
+		} else if (cmd == "askproperty") {
 			PropertyToDirector(arg);
-		} else if (isprefix(action, "close:")) {
+		} else if (cmd == "close") {
 			Close();
 			WindowSetFocus(wEditor);
-		} else if (isprefix(action, "currentmacro:")) {
+		} else if (cmd == "currentmacro") {
 			currentMacro = arg;
-		} else if (isprefix(action, "cwd:")) {
+		} else if (cmd == "cwd") {
 			FilePath dirTarget(GUI::StringFromUTF8(arg));
 			if (!dirTarget.SetWorkingDirectory()) {
 				GUI::gui_string msg = LocaliseMessage("Invalid directory '^0'.", dirTarget.AsInternal());
 				WindowMessageBox(wSciTE, msg);
 			}
-		} else if (isprefix(action, "enumproperties:")) {
+		} else if (cmd == "enumproperties") {
 			EnumProperties(arg);
-		} else if (isprefix(action, "exportashtml:")) {
+		} else if (cmd == "exportashtml") {
 			SaveToHTML(GUI::StringFromUTF8(arg));
-		} else if (isprefix(action, "exportasrtf:")) {
+		} else if (cmd == "exportasrtf") {
 			SaveToRTF(GUI::StringFromUTF8(arg));
-		} else if (isprefix(action, "exportaspdf:")) {
+		} else if (cmd == "exportaspdf") {
 			SaveToPDF(GUI::StringFromUTF8(arg));
-		} else if (isprefix(action, "exportaslatex:")) {
+		} else if (cmd == "exportaslatex") {
 			SaveToTEX(GUI::StringFromUTF8(arg));
-		} else if (isprefix(action, "exportasxml:")) {
+		} else if (cmd == "exportasxml") {
 			SaveToXML(GUI::StringFromUTF8(arg));
-		} else if (isprefix(action, "find:") && wEditor.Created()) {
+		} else if (cmd == "find" && wEditor.Created()) {
 			findWhat = arg;
 			FindNext(false, false);
-		} else if (isprefix(action, "goto:") && wEditor.Created()) {
+		} else if (cmd == "goto" && wEditor.Created()) {
 			const SA::Line line = IntegerFromText(arg) - 1;
 			GotoLineEnsureVisible(line);
 			// jump to column if given and greater than 0
@@ -4401,56 +4434,56 @@ void SciTEBase::PerformOne(char *action) {
 					wEditor.SetSel(wordStart, wordEnd);
 				}
 			}
-		} else if (isprefix(action, "insert:") && wEditor.Created()) {
+		} else if (cmd == "insert" && wEditor.Created()) {
 			wEditor.ReplaceSel(arg);
-		} else if (isprefix(action, "loadsession:")) {
+		} else if (cmd == "loadsession") {
 			if (*arg) {
 				LoadSessionFile(GUI::StringFromUTF8(arg).c_str());
 				RestoreSession();
 			}
-		} else if (isprefix(action, "macrocommand:")) {
+		} else if (cmd == "macrocommand") {
 			ExecuteMacroCommand(arg);
-		} else if (isprefix(action, "macroenable:")) {
+		} else if (cmd == "macroenable") {
 			macrosEnabled = atoi(arg);
 			SetToolsMenu();
-		} else if (isprefix(action, "macrolist:")) {
+		} else if (cmd == "macrolist") {
 			StartMacroList(arg);
-		} else if (isprefix(action, "menucommand:")) {
+		} else if (cmd == "menucommand") {
 			MenuCommand(atoi(arg));
-		} else if (isprefix(action, "open:")) {
-			Open(GUI::StringFromUTF8(arg), ofSynchronous);
-		} else if (isprefix(action, "output:") && wOutput.Created()) {
+		} else if (cmd == "open") {
+			Open(GUI::StringFromUTF8(argument), ofSynchronous);
+		} else if (cmd == "output" && wOutput.Created()) {
 			wOutput.ReplaceSel(arg);
-		} else if (isprefix(action, "property:")) {
+		} else if (cmd == "property") {
 			PropertyFromDirector(arg);
-		} else if (isprefix(action, "reloadproperties:")) {
+		} else if (cmd == "reloadproperties") {
 			ReloadProperties();
-		} else if (isprefix(action, "quit:")) {
+		} else if (cmd == "quit") {
 			QuitProgram();
-		} else if (isprefix(action, "replaceall:") && wEditor.Created()) {
-			if (len > strlen(action)) {
-				const char *arg2 = arg + strlen(arg) + 1;
-				findWhat = arg;
-				replaceWhat = arg2;
+		} else if (cmd == "replaceall" && wEditor.Created()) {
+			const size_t nulPos = argument.find('\0');
+			if (nulPos != std::string::npos) {
+				findWhat = argument.substr(0,nulPos);
+				replaceWhat = argument.substr(nulPos+1);
 				ReplaceAll(false);
 			}
-		} else if (isprefix(action, "saveas:")) {
+		} else if (cmd == "saveas") {
 			if (*arg) {
 				SaveAs(GUI::StringFromUTF8(arg).c_str(), true);
 			} else {
 				SaveAsDialog();
 			}
-		} else if (isprefix(action, "savesession:")) {
+		} else if (cmd == "savesession") {
 			if (*arg) {
 				SaveSessionFile(GUI::StringFromUTF8(arg).c_str());
 			}
-		} else if (isprefix(action, "setdefaultcwd:")) {
+		} else if (cmd == "setdefaultcwd") {
 			// This sets cwd to a value that should stay valid: either SciTE_HOME or the
 			// SciTE installation directory or directory of SciTE executable.
 			GetDefaultDirectory().SetWorkingDirectory();
-		} else if (isprefix(action, "extender:")) {
+		} else if (cmd == "extender") {
 			extender->OnExecute(arg);
-		} else if (isprefix(action, "focus:")) {
+		} else if (cmd == "focus") {
 			ActivateWindow(arg);
 		}
 	}
@@ -4512,7 +4545,7 @@ void SciTEBase::PropertyFromDirector(const char *arg) {
 	props.SetLine(arg, false);
 }
 
-void SciTEBase::PropertyToDirector(const char *arg) {
+void SciTEBase::PropertyToDirector(std::string_view arg) {
 	if (!extender)
 		return;
 	SelectionIntoProperties();
@@ -4719,40 +4752,39 @@ void SciTEBase::ExecuteMacroCommand(const char *command) {
  * to be evaluated before creating the UI.
  * Call twice, first with phase=0, then with phase=1 after creating UI.
  */
-bool SciTEBase::ProcessCommandLine(const GUI::gui_string &args, int phase) {
+
+bool SciTEBase::ProcessCommandLine(const std::vector<GUI::gui_string> &args, int phase) {
 	bool performPrint = false;
 	bool evaluate = phase == 0;
-	std::vector<GUI::gui_string> wlArgs = ListFromString(args);
-	// Convert args to vector
-	for (size_t i = 0; i < wlArgs.size(); i++) {
-		const GUI::gui_char *arg = wlArgs[i].c_str();
-		if (IsSwitchCharacter(arg[0])) {
-			arg++;
-			if (arg[0] == '\0' || (arg[0] == '-' && arg[1] == '\0')) {
+	for (size_t i = 0; i < args.size(); i++) {
+		GUI::gui_string_view arg = args[i];
+		if (!arg.empty() && IsSwitchCharacter(arg[0])) {
+			arg.remove_prefix(1);
+			if (arg.empty() || arg == GUI_TEXT("-")) {
 				if (phase == 1) {
 					OpenFromStdin(arg[0] == '-');
 				}
-			} else if (arg[0] == '@') {
+			} else if (StartsWith(arg, GUI_TEXT("@"))) {
 				if (phase == 1) {
 					OpenFilesFromStdin();
 				}
-			} else if ((arg[0] == 'p' || arg[0] == 'P') && (arg[1] == 0)) {
+			} else if (arg == GUI_TEXT("p") || arg == GUI_TEXT("P")) {
 				performPrint = true;
-			} else if (GUI::gui_string(arg) == GUI_TEXT("grep") && (wlArgs.size() - i >= 5) && (wlArgs[i+1].size() >= 4)) {
+			} else if (arg == GUI_TEXT("grep") && (args.size() - i >= 5) && (args[i+1].size() >= 4)) {
 				// in form -grep [w~][c~][d~][b~] "<file-patterns>" "<excluded-patterns>" "<search-string>"
 				GrepFlags gf = GrepFlags::stdOut;
-				if (wlArgs[i+1][0] == 'w')
+				if (args[i+1][0] == 'w')
 					gf = gf | GrepFlags::wholeWord;
-				if (wlArgs[i+1][1] == 'c')
+				if (args[i+1][1] == 'c')
 					gf = gf | GrepFlags::matchCase;
-				if (wlArgs[i+1][2] == 'd')
+				if (args[i+1][2] == 'd')
 					gf = gf | GrepFlags::dot;
-				if (wlArgs[i+1][3] == 'b')
+				if (args[i+1][3] == 'b')
 					gf = gf | GrepFlags::binary;
-				std::string sSearch = GUI::UTF8FromString(wlArgs[i+4]);
+				std::string sSearch = GUI::UTF8FromString(args[i+4]);
 				std::string unquoted = UnSlashString(sSearch);
 				SA::Position originalEnd = 0;
-				InternalGrep(gf, FilePath::GetWorkingDirectory(), wlArgs[i+2], wlArgs[i+3], unquoted, originalEnd);
+				InternalGrep(gf, FilePath::GetWorkingDirectory(), args[i+2], args[i+3], unquoted, originalEnd);
 				exit(0);
 			} else {
 				if (AfterName(arg) == ':') {
@@ -4764,9 +4796,7 @@ bool SciTEBase::ProcessCommandLine(const GUI::gui_string &args, int phase) {
 					}
 					if (evaluate) {
 						const std::string sArg = GUI::UTF8FromString(arg);
-						std::vector<char> vcArg(sArg.size() + 1);
-						std::copy(sArg.begin(), sArg.end(), vcArg.begin());
-						PerformOne(&vcArg[0]);
+						PerformOne(sArg);
 					}
 				} else {
 					if (evaluate) {
@@ -4787,8 +4817,8 @@ bool SciTEBase::ProcessCommandLine(const GUI::gui_string &args, int phase) {
 					RestoreRecentMenu();
 			}
 
-			if (!PreOpenCheck(arg))
-				Open(arg, static_cast<OpenFlags>(ofQuiet|ofSynchronous));
+			if (!PreOpenCheck(args[i]))
+				Open(args[i], static_cast<OpenFlags>(ofQuiet|ofSynchronous));
 		}
 	}
 	if (phase == 1) {

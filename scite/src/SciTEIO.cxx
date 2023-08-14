@@ -517,7 +517,7 @@ void SciTEBase::UpdateProgress(Worker *) {
 	}
 }
 
-bool SciTEBase::PreOpenCheck(const GUI::gui_char *) {
+bool SciTEBase::PreOpenCheck(const GUI::gui_string &) {
 	return false;
 }
 
@@ -593,12 +593,14 @@ bool SciTEBase::Open(const FilePath &file, OpenFlags of) {
 	SetFileName(absPath);
 
 	propsDiscovered.Clear();
-	std::string discoveryScript = props.GetExpandedString("command.discover.properties");
-	if (discoveryScript.length()) {
-		std::string propertiesText = CommandExecute(GUI::StringFromUTF8(discoveryScript).c_str(),
-					     absPath.Directory().AsInternal());
-		if (propertiesText.size()) {
-			propsDiscovered.ReadFromMemory(propertiesText.c_str(), propertiesText.size(), absPath.Directory(), filter, nullptr, 0);
+	if (propsUser.GetInt("discover.properties")) {
+		std::string discoveryScript = props.GetExpandedString("command.discover.properties");
+		if (discoveryScript.length()) {
+			std::string propertiesText = CommandExecute(GUI::StringFromUTF8(discoveryScript).c_str(),
+						     absPath.Directory().AsInternal());
+			if (propertiesText.size()) {
+				propsDiscovered.ReadFromMemory(propertiesText, absPath.Directory(), filter, nullptr, 0);
+			}
 		}
 	}
 	CurrentBuffer()->props = propsDiscovered;
@@ -711,7 +713,7 @@ bool SciTEBase::OpenSelected() {
 		// Support the ctags format
 
 		if (lineNumber == 0) {
-			cTag = GetCTag();
+			cTag = GetCTag(pwFocussed);
 		}
 	}
 
@@ -748,8 +750,8 @@ bool SciTEBase::OpenSelected() {
 		if (Open(pathReturned, of)) {
 			if (lineNumber > 0) {
 				wEditor.GotoLine(lineNumber - 1);
-			} else if (cTag.length() != 0) {
-				const SA::Line cTagLine = IntegerFromText(cTag.c_str());
+			} else if (!cTag.empty()) {
+				const SA::Line cTagLine = IntPtrFromString(cTag, 0);
 				if (cTagLine > 0) {
 					wEditor.GotoLine(cTagLine - 1);
 				} else {
@@ -888,24 +890,22 @@ void SciTEBase::Activate(bool activeApp) {
 }
 
 FilePath SciTEBase::SaveName(const char *ext) const {
-	GUI::gui_string savePath = filePath.AsInternal();
-	if (ext) {
-		int dot = static_cast<int>(savePath.length() - 1);
-		while ((dot >= 0) && (savePath[dot] != '.')) {
-			dot--;
-		}
-		if (dot >= 0) {
-			const int keepExt = props.GetInt("export.keep.ext");
-			if (keepExt == 0) {
-				savePath.erase(dot);
-			} else if (keepExt == 2) {
-				savePath[dot] = '_';
-			}
-		}
-		savePath += GUI::StringFromUTF8(ext);
+	if (!ext) {
+		return filePath;
 	}
-	//~ fprintf(stderr, "SaveName <%s> <%s> <%s>\n", filePath.AsInternal(), savePath.c_str(), ext);
-	return FilePath(savePath.c_str());
+	const FilePath directory = filePath.Directory();
+	GUI::gui_string name = filePath.Name().AsInternal();
+	const size_t dot = name.rfind('.');
+	if (dot != GUI::gui_string::npos) {
+		const int keepExt = props.GetInt("export.keep.ext");
+		if (keepExt == 0) {
+			name.erase(dot);
+		} else if (keepExt == 2) {
+			name[dot] = '_';
+		}
+	}
+	name += GUI::StringFromUTF8(ext);
+	return FilePath(directory, name);
 }
 
 SciTEBase::SaveResult SciTEBase::SaveIfUnsure(bool forceQuestion, SaveFlags sf) {
@@ -1555,7 +1555,7 @@ void SciTEBase::GrepRecursive(GrepFlags gf, const FilePath &baseDir, const char 
 			return;
 		if ((fileTypes.empty() || fPath.Matches(fileTypes)) &&
 			((excludedTypes.empty() || !fPath.Matches(excludedTypes)))) {
-			//OutputAppendStringSynchronised(fPath.AsUTF8().c_str());
+			//OutputAppendStringSynchronised(fPath.AsUTF8());
 			//OutputAppendStringSynchronised("\n");
 			FileReader fr(fPath, FlagIsSet(gf, GrepFlags::matchCase));
 			if (FlagIsSet(gf, GrepFlags::binary) || !fr.BufferContainsNull()) {
@@ -1592,7 +1592,7 @@ void SciTEBase::GrepRecursive(GrepFlags gf, const FilePath &baseDir, const char 
 		if (FlagIsSet(gf, GrepFlags::stdOut)) {
 			fwrite(os.c_str(), os.length(), 1, stdout);
 		} else {
-			OutputAppendStringSynchronised(os.c_str());
+			OutputAppendStringSynchronised(os);
 		}
 	}
 	for (const FilePath &fPath : directories) {
@@ -1614,7 +1614,7 @@ void SciTEBase::InternalGrep(GrepFlags gf, const FilePath &directory, GUI::gui_s
 		os.append("\" in \"");
 		os.append(GUI::UTF8FromString(fileTypes));
 		os.append("\"\n");
-		OutputAppendStringSynchronised(os.c_str());
+		OutputAppendStringSynchronised(os);
 		ShowOutputOnMainThread();
 		originalEnd += os.length();
 	}
@@ -1630,7 +1630,7 @@ void SciTEBase::InternalGrep(GrepFlags gf, const FilePath &directory, GUI::gui_s
 			sExitMessage += StdStringFromDouble(commandTime.Duration(), 3);
 		}
 		sExitMessage += "\n";
-		OutputAppendStringSynchronised(sExitMessage.c_str());
+		OutputAppendStringSynchronised(sExitMessage);
 	}
 }
 
