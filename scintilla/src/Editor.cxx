@@ -1488,7 +1488,7 @@ constexpr Sci::Position lengthToMultiThread = 4000;
 
 bool Editor::WrapBlock(Surface *surface, Sci::Line lineToWrap, Sci::Line lineToWrapEnd) {
 
-#if defined(_USING_V110_SDK71_)
+#if defined(_USING_V110_SDK71_) /* FUCK */
 	bool wrapOccurred = false;
 	const size_t bytesBeingWrapped = pdoc->LineStart(lineToWrapEnd) - pdoc->LineStart(lineToWrap);
 	ElapsedPeriod epWrapping;
@@ -1501,7 +1501,7 @@ bool Editor::WrapBlock(Surface *surface, Sci::Line lineToWrap, Sci::Line lineToW
 	}
 	durationWrapOneByte.AddSample(bytesBeingWrapped, epWrapping.Duration());
 	return wrapOccurred;
-#else
+#else /* FUCK */
 	const size_t linesBeingWrapped = static_cast<size_t>(lineToWrapEnd - lineToWrap);
 
 	std::vector<int> linesAfterWrap(linesBeingWrapped);
@@ -1613,7 +1613,7 @@ bool Editor::WrapBlock(Surface *surface, Sci::Line lineToWrap, Sci::Line lineToW
 	durationWrapOneByte.AddSample(bytesBeingWrapped, durationShortLinesThreads + durationLongLines);
 
 	return wrapsDone > 0;
-#endif
+#endif /* FUCK */
 }
 
 // Perform  wrapping for a subset of the lines needing wrapping.

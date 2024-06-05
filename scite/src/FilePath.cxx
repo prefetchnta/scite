@@ -347,7 +347,7 @@ FilePath FilePath::NormalizePath() const {
 GUI::gui_string FilePath::RelativePathTo(const FilePath &filePath) const {
 	// Only handles simple case where filePath is in this directory or a sub-directory
 	GUI::gui_string relPath = filePath.fileName;
-	if (!fileName.empty() && relPath.starts_with(fileName)) {
+	if (!fileName.empty() && StartsWith(relPath, fileName)) { /* FUCK */
 		relPath = relPath.substr(fileName.length());
 		if (!relPath.empty()) {
 			// Remove directory separator

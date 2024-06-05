@@ -12,6 +12,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm> /* FUCK */
 #include <memory>
 #include <chrono>
 #include <atomic>
