@@ -22,7 +22,7 @@ public:
 	explicit WordClassifier(int baseStyle_) : baseStyle(baseStyle_), firstStyle(0), lenStyles(0) {
 	}
 
-	void Allocate(int firstStyle_, int lenStyles_) {
+	void Allocate(int firstStyle_, int lenStyles_) noexcept {
 		firstStyle = firstStyle_;
 		lenStyles = lenStyles_;
 		wordToStyle.clear();
@@ -51,7 +51,7 @@ public:
 	}
 
 	int ValueFor(std::string_view s) const {
-		WordStyleMap::const_iterator it = wordToStyle.find(s);
+		WordStyleMap::const_iterator const it = wordToStyle.find(s);
 		if (it != wordToStyle.end())
 			return it->second;
 		else
@@ -82,7 +82,7 @@ public:
 			while (*cpSpace && !(*cpSpace == ' ' || *cpSpace == '\t' || *cpSpace == '\r' || *cpSpace == '\n'))
 				cpSpace++;
 			if (cpSpace > identifiers) {
-				std::string word(identifiers, cpSpace - identifiers);
+				const std::string word(identifiers, cpSpace - identifiers);
 				wordToStyle[word] = style;
 			}
 			identifiers = cpSpace;
@@ -91,6 +91,10 @@ public:
 		}
 	}
 };
+
+// This is the common configuration: 64 sub-styles allocated from 128 to 191
+constexpr int SubStylesFirst = 0x80;
+constexpr int SubStylesAvailable = 0x40;
 
 class SubStyles {
 	int classifications;
@@ -121,7 +125,7 @@ class SubStyles {
 
 public:
 
-	SubStyles(const char *baseStyles_, int styleFirst_, int stylesAvailable_, int secondaryDistance_) :
+	SubStyles(const char *baseStyles_, int styleFirst_=SubStylesFirst, int stylesAvailable_=SubStylesAvailable, int secondaryDistance_=0) :
 		classifications(0),
 		baseStyles(baseStyles_),
 		styleFirst(styleFirst_),
@@ -134,7 +138,7 @@ public:
 		}
 	}
 
-	int Allocate(int styleBase, int numberStyles) {
+	int Allocate(int styleBase, int numberStyles) noexcept {
 		const int block = BlockFromBaseStyle(styleBase);
 		if (block >= 0) {
 			if ((allocated + numberStyles) > stylesAvailable)

@@ -47,6 +47,7 @@
 #include "JobQueue.h"
 #include "Cookie.h"
 #include "Worker.h"
+#include "Utf8_16.h"
 #include "FileWorker.h"
 #include "MatchMarker.h"
 #include "Searcher.h"
@@ -54,12 +55,12 @@
 
 const GUI::gui_char defaultSessionFileName[] = GUI_TEXT("SciTE.session");
 
-void BufferDocReleaser::operator()(void *pDoc) noexcept {
+void BufferDocReleaser::operator()(SA::IDocumentEditable *pDoc) noexcept {
 	if (pDoc) {
 		try {
-			pSci->ReleaseDocument(pDoc);
+			pDoc->Release();
 		} catch (...) {
-			// ReleaseDocument must not throw, ignore if it does.
+			// Release must not throw, ignore if it does.
 		}
 	}
 }
@@ -279,13 +280,13 @@ void BufferList::PopStack() {
 	}
 }
 
-BufferIndex BufferList::StackNext() {
+BufferIndex BufferList::StackNext() noexcept {
 	if (++stackcurrent >= length)
 		stackcurrent = 0;
 	return stack[stackcurrent];
 }
 
-BufferIndex BufferList::StackPrev() {
+BufferIndex BufferList::StackPrev() noexcept {
 	if (--stackcurrent < 0)
 		stackcurrent = length - 1;
 	return stack[stackcurrent];
@@ -376,7 +377,7 @@ BackgroundActivities BufferList::CountBackgroundActivities() const {
 	return bg;
 }
 
-bool BufferList::SavingInBackground() const {
+bool BufferList::SavingInBackground() const noexcept {
 	for (int i = 0; i<length; i++) {
 		if (buffers[i].pFileWorker && !buffers[i].pFileWorker->IsLoading() && !buffers[i].pFileWorker->FinishedJob()) {
 			return true;
@@ -409,22 +410,22 @@ void BufferList::SetVisible(BufferIndex index, bool visible) {
 	}
 }
 
-void *SciTEBase::GetDocumentAt(BufferIndex index) {
+SA::IDocumentEditable *SciTEBase::GetDocumentAt(BufferIndex index) {
 	if (index < 0 || index >= buffers.size()) {
 		return nullptr;
 	}
 	if (!buffers.buffers[index].doc) {
 		// Create a new document buffer
-		buffers.buffers[index].doc = BufferDoc(wEditor.CreateDocument(0, SA::DocumentOption::Default), docReleaser);
+		buffers.buffers[index].doc.reset(wEditor.CreateDocument(0, SA::DocumentOption::Default));
 	}
 	return buffers.buffers[index].doc.get();
 }
 
-void SciTEBase::SwitchDocumentAt(BufferIndex index, void *pdoc) {
+void SciTEBase::SwitchDocumentAt(BufferIndex index, SA::IDocumentEditable *pdoc) {
 	if (index < 0 || index >= buffers.size()) {
 		return;
 	}
-	buffers.buffers[index].doc = BufferDoc(pdoc, docReleaser);
+	buffers.buffers[index].doc.reset(pdoc);
 	if (index == buffers.Current()) {
 		wEditor.SetDocPointer(buffers.buffers[index].doc.get());
 	}
@@ -576,8 +577,8 @@ void SciTEBase::InitialiseBuffers() {
 	if (!buffers.initialised) {
 		buffers.initialised = true;
 		// First document is the default from creation of control
-		buffers.buffers[0].doc = BufferDoc(wEditor.DocPointer(), docReleaser);
-		wEditor.AddRefDocument(buffers.buffers[0].doc.get()); // We own this reference
+		buffers.buffers[0].doc.reset(wEditor.DocPointer());
+		buffers.buffers[0].doc->AddRef(); // We own this reference
 		if (buffers.size() == 1) {
 			// Single buffer mode, delete the Buffers main menu entry
 			DestroyMenuItem(menuBuffers, 0);
@@ -917,7 +918,7 @@ void SciTEBase::New() {
 		buffers.SetCurrent(buffers.Add());
 	}
 
-	void *doc = GetDocumentAt(buffers.Current());
+	SA::IDocumentEditable *doc = GetDocumentAt(buffers.Current());
 	wEditor.SetDocPointer(doc);
 
 	FilePath curDirectory(filePath.Directory());
@@ -1314,9 +1315,8 @@ void SciTEBase::SetFileStackMenu() {
 				GUI::gui_string sEntry;
 
 #if defined(_WIN32) || defined(GTK)
-				GUI::gui_string sPos = GUI::StringFromInteger((stackPos + 1) % 10);
-				GUI::gui_string sHotKey = GUI_TEXT("&") + sPos + GUI_TEXT(" ");
-				sEntry = sHotKey;
+				const GUI::gui_string sPos = GUI::StringFromInteger((stackPos + 1) % 10);
+				sEntry = GUI_TEXT("&") + sPos + GUI_TEXT(" ");
 #endif
 
 				const GUI::gui_string path = EscapeFilePath(
@@ -1442,7 +1442,7 @@ void SciTEBase::StackMenuPrev() {
 					rf = rfLast;
 					rfLast.Init();
 				} else {
-					rf = rfCurrent;
+					rf = std::move(rfCurrent);
 					break;
 				}
 			}
@@ -1977,7 +1977,7 @@ void SciTEBase::ShowMessages(SA::Line line) {
 	while ((line < maxLine) && (acc.StyleAt(acc.LineStart(line)) != SCE_ERR_CMD)) {
 		const SA::Position startPosLine = wOutput.LineStart(line);
 		const SA::Position lineEnd = wOutput.LineEnd(line);
-		std::string message = wOutput.StringOfSpan(SA::Span(startPosLine, lineEnd));
+		std::string message = wOutput.StringOfRange(SA::Span(startPosLine, lineEnd));
 		std::string source;
 		SA::Position column = 0;
 		int style = acc.StyleAt(startPosLine);
@@ -2050,7 +2050,7 @@ void SciTEBase::GoMessage(int dir) {
 					      "error.marker.back", ColourRGB(0xff, 0xff, 0)));
 			wOutput.MarkerAdd(lookLine, 0);
 			wOutput.SetSel(startPosLine, startPosLine);
-			std::string message = wOutput.StringOfSpan(SA::Span(startPosLine, startPosLine + lineLength));
+			std::string message = wOutput.StringOfRange(SA::Span(startPosLine, startPosLine + lineLength));
 			if ((style == SCE_ERR_ESCSEQ) || (style == SCE_ERR_ESCSEQ_UNKNOWN) || (style >= SCE_ERR_ES_BLACK)) {
 				// GCC message with ANSI escape sequences
 				RemoveEscSeq(message);

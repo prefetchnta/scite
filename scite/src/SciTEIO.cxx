@@ -49,11 +49,11 @@
 #include "JobQueue.h"
 #include "Cookie.h"
 #include "Worker.h"
+#include "Utf8_16.h"
 #include "FileWorker.h"
 #include "MatchMarker.h"
 #include "Searcher.h"
 #include "SciTEBase.h"
-#include "Utf8_16.h"
 
 #if defined(GTK)
 const GUI::gui_char propUserFileName[] = GUI_TEXT(".SciTEUser.properties");
@@ -154,8 +154,9 @@ void SciTEBase::DiscoverEOLSetting() {
 
 // Look inside the first line for a #! clue regarding the language
 std::string SciTEBase::DiscoverLanguage() {
-	const SA::Position length = std::min<SA::Position>(LengthDocument(), 64 * 1024);
-	std::string buf = wEditor.StringOfSpan(SA::Span(0, length));
+	constexpr SA::Position oneK = 1024;
+	const SA::Position length = std::min(LengthDocument(), 64 * oneK);
+	std::string buf = wEditor.StringOfRange(SA::Span(0, length));
 	std::string languageOverride;
 	std::string_view line = ExtractLine(buf);
 	if (StartsWith(line, "<?xml")) {
@@ -247,7 +248,39 @@ void SciTEBase::DiscoverIndentSetting() {
 	}
 }
 
-void SciTEBase::OpenCurrentFile(long long fileSize, bool suppressMessage, bool asynchronous) {
+namespace {
+
+SA::DocumentOption LoadingOptions(const PropSetFile &props, const long long fileSize) {
+	SA::DocumentOption docOptions = SA::DocumentOption::Default;
+
+	const long long sizeLarge = props.GetLongLong("file.size.large");
+	if (sizeLarge && (fileSize > sizeLarge))
+		docOptions = SA::DocumentOption::TextLarge;
+
+	const long long sizeNoStyles = props.GetLongLong("file.size.no.styles");
+	if (sizeNoStyles && (fileSize > sizeNoStyles))
+		docOptions = docOptions | SA::DocumentOption::StylesNone;
+
+	return docOptions;
+}
+
+void AddText(GUI::ScintillaWindow &wDestination, std::string_view sv) {
+	wDestination.AddText(sv.size(), sv.data());
+}
+
+}
+
+void SciTEBase::OpenCurrentFile(const long long fileSize, bool suppressMessage, bool asynchronous) {
+	// Allocate a bit extra to allow minor edits without reallocation.
+	const long long fileAllocationSize = fileSize + 1000;
+	if (fileAllocationSize >= PTRDIFF_MAX || fileSize < 0) {
+		if (!suppressMessage) {
+			GUI::gui_string msg = LocaliseMessage("Could not open file '^0'.", filePath.AsInternal());
+			WindowMessageBox(wSciTE, msg);
+		}
+		return;
+	}
+
 	if (CurrentBuffer()->pFileWorker) {
 		// Already performing an asynchronous load or save so do not restart load
 		if (!suppressMessage) {
@@ -269,6 +302,8 @@ void SciTEBase::OpenCurrentFile(long long fileSize, bool suppressMessage, bool a
 		return;
 	}
 
+	const SA::Position bufferSize = static_cast<SA::Position>(fileAllocationSize);
+
 	CurrentBuffer()->SetTimeFromFile();
 
 	wEditor.BeginUndoAction();	// Group together clear and insert
@@ -280,22 +315,11 @@ void SciTEBase::OpenCurrentFile(long long fileSize, bool suppressMessage, bool a
 		wEditor.StyleSetBack(StyleDefault, 0xEEEEEE);
 		wEditor.SetReadOnly(true);
 		assert(CurrentBufferConst()->pFileWorker == nullptr);
-		Scintilla::ILoader *pdocLoad;
+		Scintilla::ILoader *pdocLoad = nullptr;
 		try {
-			SA::DocumentOption docOptions = SA::DocumentOption::Default;
-
-			const long long sizeLarge = props.GetLongLong("file.size.large");
-			if (sizeLarge && (fileSize > sizeLarge))
-				docOptions = SA::DocumentOption::TextLarge;
-
-			const long long sizeNoStyles = props.GetLongLong("file.size.no.styles");
-			if (sizeNoStyles && (fileSize > sizeNoStyles))
-				docOptions = static_cast<SA::DocumentOption>(
-						     static_cast<int>(docOptions) | static_cast<int>(SA::DocumentOption::StylesNone));
-
+			const SA::DocumentOption docOptions = LoadingOptions(props, fileSize);
 			pdocLoad = static_cast<Scintilla::ILoader *>(
-					   wEditor.CreateLoader(static_cast<SA::Position>(fileSize) + 1000,
-								docOptions));
+					   wEditor.CreateLoader(bufferSize, docOptions));
 		} catch (...) {
 			wEditor.SetStatus(SA::Status::Ok);
 			return;
@@ -304,35 +328,23 @@ void SciTEBase::OpenCurrentFile(long long fileSize, bool suppressMessage, bool a
 		CurrentBuffer()->pFileWorker->sleepTime = props.GetInt("asynchronous.sleep");
 		PerformOnNewThread(CurrentBuffer()->pFileWorker.get());
 	} else {
-		wEditor.Allocate(static_cast<SA::Position>(fileSize) + 1000);
+		wEditor.Allocate(bufferSize);
 
-		Utf8_16_Read convert;
+		std::unique_ptr<Utf8_16::Reader> convert = Utf8_16::Reader::Allocate();
 		std::vector<char> data(blockSize);
-		size_t lenFile = fread(&data[0], 1, data.size(), fp);
-		const UniMode umCodingCookie = CodingCookieValue(std::string_view(data.data(), lenFile));
+		size_t lenFile = fread(data.data(), 1, data.size(), fp);
 		while (lenFile > 0) {
-			lenFile = convert.convert(&data[0], lenFile);
-			const char *dataBlock = convert.getNewBuf();
-			wEditor.AddText(lenFile, dataBlock);
-			lenFile = fread(&data[0], 1, data.size(), fp);
-			if (lenFile == 0) {
-				// Handle case where convert is holding a lead surrogate but no more data
-				const size_t lenFileTrail = convert.convert(nullptr, lenFile);
-				if (lenFileTrail) {
-					const char *dataTrail = convert.getNewBuf();
-					wEditor.AddText(lenFileTrail, dataTrail);
-				}
-			}
+			const std::string_view dataBlock = convert->convert(std::string_view(data.data(), lenFile));
+			AddText(wEditor, dataBlock);
+			lenFile = fread(data.data(), 1, data.size(), fp);
 		}
 		fclose(fp);
+		// Handle case where convert is holding a lead surrogate but no more data
+		const std::string_view dataTrail = convert->convert("");
+		AddText(wEditor, dataTrail);
 		wEditor.EndUndoAction();
 
-		CurrentBuffer()->unicodeMode = static_cast<UniMode>(
-						       static_cast<int>(convert.getEncoding()));
-		// Check the first two lines for coding cookies
-		if (CurrentBuffer()->unicodeMode == UniMode::uni8Bit) {
-			CurrentBuffer()->unicodeMode = umCodingCookie;
-		}
+		CurrentBuffer()->unicodeMode = convert->getEncoding();
 
 		CompleteOpen(OpenCompletion::synchronous);
 	}
@@ -352,7 +364,8 @@ void SciTEBase::TextRead(FileWorker *pFileWorker) {
 			buffers.buffers[iBuffer].lifeState = Buffer::LifeState::empty;
 		}
 		// Switch documents
-		void *pdocLoading = pFileLoader->pLoader->ConvertToDocument();
+		SA::IDocumentEditable *pdocLoading = static_cast<SA::IDocumentEditable *>(
+			pFileLoader->pLoader->ConvertToDocument());
 		pFileLoader->pLoader = nullptr;
 		SwitchDocumentAt(iBuffer, pdocLoading);
 		if (iBuffer == buffers.Current()) {
@@ -495,13 +508,13 @@ void SciTEBase::TextWritten(FileWorker *pFileWorker) {
 }
 
 void SciTEBase::UpdateProgress(Worker *) {
-	GUI::gui_string prog;
 	BackgroundActivities bgActivities = buffers.CountBackgroundActivities();
 	const int countBoth = bgActivities.loaders + bgActivities.storers;
 	if (countBoth == 0) {
 		// Should hide UI
 		ShowBackgroundProgress(GUI_TEXT(""), 0, 0);
 	} else {
+		GUI::gui_string prog;
 		if (countBoth == 1) {
 			prog += LocaliseMessage(bgActivities.loaders ? "Opening '^0'" : "Saving '^0'",
 						bgActivities.fileNameLast.c_str());
@@ -615,21 +628,32 @@ bool SciTEBase::Open(const FilePath &file, OpenFlags of) {
 	if (!filePath.IsUntitled()) {
 		wEditor.SetReadOnly(false);
 		wEditor.Cancel();
-		if (of & ofPreserveUndo) {
+
+		bool allowUndoLoad = of & ofPreserveUndo;
+
+		asynchronous = (fileSize > props.GetInt("background.open.size", -1)) &&
+			!(of & (ofPreserveUndo | ofSynchronous));
+		const SA::DocumentOption loadingOptions = LoadingOptions(props, fileSize);
+		if (!asynchronous && loadingOptions != wEditor.DocumentOptions()) {
+			// File needs different options than current document so create new.
+			SwitchDocumentAt(buffers.Current(), wEditor.CreateDocument(0, loadingOptions));
+			allowUndoLoad = false;
+		}
+
+		if (allowUndoLoad) {
 			wEditor.BeginUndoAction();
 		} else {
 			wEditor.SetUndoCollection(false);
 		}
 
-		asynchronous = (fileSize > props.GetInt("background.open.size", -1)) &&
-			       !(of & (ofPreserveUndo|ofSynchronous));
 		OpenCurrentFile(fileSize, of & ofQuiet, asynchronous);
 
-		if (of & ofPreserveUndo) {
+		if (allowUndoLoad) {
 			wEditor.EndUndoAction();
 		} else {
 			wEditor.EmptyUndoBuffer();
 		}
+
 		CurrentBuffer()->isReadOnly = props.GetInt("read.only");
 		wEditor.SetReadOnly(CurrentBuffer()->isReadOnly);
 	}
@@ -672,6 +696,13 @@ bool SciTEBase::OpenSelected() {
 		if (selName[0] == '/' && selName[2] == ':') { // file:///C:/filename.ext
 			selName.erase(0, 1);
 		}
+	}
+
+	if (StartsWith(selName, "~/")) {
+		selName.erase(0, 2);
+		const FilePath selPath(GUI::StringFromUTF8(selName));
+		const FilePath expandedPath(FilePath::UserHomeDirectory(), selPath);
+		selName = expandedPath.AsUTF8();
 	}
 
 	std::string fileNameForExtension = ExtensionFileName();
@@ -1112,18 +1143,15 @@ private:
 void SciTEBase::StripTrailingSpaces() {
 	const SA::Line maxLines = wEditor.LineCount();
 	SelectionKeeper keeper(wEditor);
-	for (int line = 0; line < maxLines; line++) {
+	for (SA::Line line = 0; line < maxLines; line++) {
 		const SA::Position lineStart = wEditor.LineStart(line);
 		const SA::Position lineEnd = wEditor.LineEnd(line);
-		SA::Position i = lineEnd - 1;
-		char ch = wEditor.CharacterAt(i);
-		while ((i >= lineStart) && ((ch == ' ') || (ch == '\t'))) {
+		SA::Position i = lineEnd;
+		while ((i > lineStart) && IsSpaceOrTab(wEditor.CharacterAt(i-1))) {
 			i--;
-			ch = wEditor.CharacterAt(i);
 		}
-		if (i < (lineEnd - 1)) {
-			wEditor.SetTarget(SA::Span(i + 1, lineEnd));
-			wEditor.ReplaceTarget("");
+		if (i < lineEnd) {
+			wEditor.DeleteRange(i, lineEnd-i);
 		}
 	}
 }
@@ -1184,34 +1212,26 @@ bool SciTEBase::SaveBuffer(const FilePath &saveName, SaveFlags sf) {
 					WindowMessageBox(wSciTE, msg);
 				}
 			} else {
-				Utf8_16_Write convert;
-				if (CurrentBuffer()->unicodeMode != UniMode::cookie) {	// Save file with cookie without BOM.
-					convert.setEncoding(static_cast<Utf8_16::encodingType>(
-								    static_cast<int>(CurrentBuffer()->unicodeMode)));
-				}
-				convert.setfile(fp);
-				std::vector<char> data(blockSize + 1);
+				std::unique_ptr<Utf8_16::Writer> convert = Utf8_16::Writer::Allocate(CurrentBuffer()->unicodeMode, blockSize);
+				std::vector<char> data(blockSize);
 				retVal = true;
-				size_t grabSize = 0;
-				for (size_t i = 0; i < lengthDoc; i += grabSize) {
-					grabSize = lengthDoc - i;
-					if (grabSize > blockSize)
-						grabSize = blockSize;
+				for (size_t startBlock = 0; startBlock < lengthDoc;) {
+					size_t grabSize = std::min(lengthDoc - startBlock, blockSize);
 					// Round down so only whole characters retrieved.
-					grabSize = wEditor.PositionBefore(i + grabSize + 1) - i;
-					const SA::Span rangeGrab(static_cast<SA::Position>(i),
-								  static_cast<SA::Position>(i + grabSize));
-					wEditor.SetTarget(rangeGrab);
-					wEditor.TargetText(&data[0]);
-					const size_t written = convert.fwrite(&data[0], grabSize);
+					grabSize = wEditor.PositionBefore(startBlock + grabSize + 1) - startBlock;
+					const SA::Span rangeGrab(startBlock, startBlock + grabSize);
+					CopyText(wEditor, data.data(), rangeGrab);
+					const size_t written = convert->fwrite(std::string_view(data.data(), grabSize), fp);
 					if (written == 0) {
 						retVal = false;
 						break;
 					}
+					startBlock += grabSize;
 				}
-				if (convert.fclose() != 0) {
+				if (fclose(fp) != 0) {
 					retVal = false;
 				}
+				fp = nullptr;
 			}
 		}
 	}
@@ -1348,12 +1368,12 @@ void SciTEBase::AbandonAutomaticSave() {
 	CurrentBuffer()->AbandonAutomaticSave();
 }
 
-bool SciTEBase::IsStdinBlocked() {
+bool SciTEBase::IsStdinBlocked() noexcept {
 	return false; /* always default to blocked */
 }
 
 void SciTEBase::OpenFromStdin(bool UseOutputPane) {
-	Utf8_16_Read convert;
+	std::unique_ptr<Utf8_16::Reader> convert = Utf8_16::Reader::Allocate();
 	std::vector<char> data(blockSize);
 
 	/* if stdin is blocked, do not execute this method */
@@ -1361,22 +1381,16 @@ void SciTEBase::OpenFromStdin(bool UseOutputPane) {
 		return;
 
 	Open(FilePath());
-	if (UseOutputPane) {
-		wOutput.ClearAll();
-	} else {
+	GUI::ScintillaWindow &wText = UseOutputPane ? wOutput : wEditor;
+	if (!UseOutputPane) {
 		wEditor.BeginUndoAction();	// Group together clear and insert
-		wEditor.ClearAll();
 	}
-	size_t lenFile = fread(&data[0], 1, data.size(), stdin);
-	const UniMode umCodingCookie = CodingCookieValue(std::string_view(data.data(), lenFile));
+	wText.ClearAll();
+	size_t lenFile = fread(data.data(), 1, data.size(), stdin);
 	while (lenFile > 0) {
-		lenFile = convert.convert(&data[0], lenFile);
-		if (UseOutputPane) {
-			wOutput.AddText(lenFile, convert.getNewBuf());
-		} else {
-			wEditor.AddText(lenFile, convert.getNewBuf());
-		}
-		lenFile = fread(&data[0], 1, data.size(), stdin);
+		const std::string_view dataConverted = convert->convert(std::string_view(data.data(), lenFile));
+		AddText(wText, dataConverted);
+		lenFile = fread(data.data(), 1, data.size(), stdin);
 	}
 	if (UseOutputPane) {
 		if (props.GetInt("split.vertical") == 0) {
@@ -1388,12 +1402,7 @@ void SciTEBase::OpenFromStdin(bool UseOutputPane) {
 	} else {
 		wEditor.EndUndoAction();
 	}
-	CurrentBuffer()->unicodeMode = static_cast<UniMode>(
-					       static_cast<int>(convert.getEncoding()));
-	// Check the first two lines for coding cookies
-	if (CurrentBuffer()->unicodeMode == UniMode::uni8Bit) {
-		CurrentBuffer()->unicodeMode = umCodingCookie;
-	}
+	CurrentBuffer()->unicodeMode = convert->getEncoding();
 	if (CurrentBuffer()->unicodeMode != UniMode::uni8Bit) {
 		// Override the code page if Unicode
 		codePage = SA::CpUtf8;
@@ -1467,7 +1476,7 @@ public:
 	bool Exhausted() const noexcept {
 		return exhausted;
 	}
-	int NextByte() noexcept {
+	char NextByte() noexcept {
 		EnsureData();
 		if (pos >= valid) {
 			return 0;
@@ -1505,14 +1514,14 @@ public:
 		}
 		lineToShow.clear();
 		while (!bf->Exhausted()) {
-			const int ch = bf->NextByte();
+			const char ch = bf->NextByte();
 			if (lastWasCR && ch == '\n' && lineToShow.empty()) {
 				lastWasCR = false;
 			} else if (ch == '\r' || ch == '\n') {
 				lastWasCR = ch == '\r';
 				break;
 			} else {
-				lineToShow.push_back(static_cast<char>(ch));
+				lineToShow.push_back(ch);
 			}
 		}
 		lineNum++;

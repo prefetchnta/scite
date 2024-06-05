@@ -9,7 +9,6 @@
 #define FILEPATH_H
 
 extern const GUI::gui_char pathSepString[];
-extern const GUI::gui_char pathSepChar;
 extern const GUI::gui_char listSepString[];
 extern const GUI::gui_char configFileVisibilityString[];
 extern const GUI::gui_char fileRead[];
@@ -66,7 +65,7 @@ public:
 	void FixName();
 	FilePath AbsolutePath() const;
 	FilePath NormalizePath() const;
-	GUI::gui_string RelativePathTo(FilePath filePath) const;
+	GUI::gui_string RelativePathTo(const FilePath &filePath) const;
 	static FilePath GetWorkingDirectory();
 	bool SetWorkingDirectory() const noexcept;
 	static FilePath UserHomeDirectory();

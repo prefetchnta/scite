@@ -550,6 +550,7 @@ static const char *propertiesToForward[] = {
 	"lexer.asm.comment.delimiter",
 	"lexer.baan.styling.within.preprocessor",
 	"lexer.bash.command.substitution",
+	"lexer.bash.nested.backticks",
 	"lexer.bash.special.parameter",
 	"lexer.bash.styling.inside.backticks",
 	"lexer.bash.styling.inside.heredoc",
@@ -600,6 +601,7 @@ static const char *propertiesToForward[] = {
 	"lexer.python.literals.binary",
 	"lexer.python.strings.b",
 	"lexer.python.strings.f",
+	"lexer.python.strings.f.pep.701",
 	"lexer.python.strings.over.newline",
 	"lexer.python.strings.u",
 	"lexer.python.unicode.identifiers",
@@ -795,7 +797,7 @@ void SciTEBase::ReadProperties() {
 	Lexilla::Load(lexillaPath.empty() ? "." : lexillaPath);
 
 	std::vector<std::string> libraryProperties = Lexilla::LibraryProperties();
-	for (std::string property : libraryProperties) {
+	for (const std::string &property : libraryProperties) {
 		std::string key("lexilla.context.");
 		key += property;
 		std::string value = props.GetExpandedString(key);
@@ -1153,6 +1155,9 @@ void SciTEBase::ReadProperties() {
 
 	const int autoCChooseSingle = props.GetInt("autocomplete.choose.single");
 	wEditor.AutoCSetChooseSingle(autoCChooseSingle);
+
+	const Scintilla::MultiAutoComplete autoCMulti = static_cast<Scintilla::MultiAutoComplete>(props.GetInt("autocomplete.multi"));
+	wEditor.AutoCSetMulti(autoCMulti);
 
 	wEditor.AutoCSetCancelAtStart(false);
 	wEditor.AutoCSetDropRestOfWord(false);

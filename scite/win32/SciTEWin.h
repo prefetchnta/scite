@@ -92,6 +92,7 @@ typedef void *HTHEME;
 #include "JobQueue.h"
 #include "Cookie.h"
 #include "Worker.h"
+#include "Utf8_16.h"
 #include "FileWorker.h"
 #include "MatchMarker.h"
 #include "Searcher.h"
@@ -126,7 +127,7 @@ public:
 
 	CommandWorker() noexcept;
 	void Initialise(bool resetToStart) noexcept;
-	void Execute() override;
+	void Execute() noexcept override;
 };
 
 class Dialog;
@@ -149,7 +150,7 @@ struct Band {
 	int height;
 	bool expands;
 	GUI::Window win;
-	Band(bool visible_, int height_, bool expands_, GUI::Window win_) noexcept :
+	Band(bool visible_, int height_, bool expands_, const GUI::Window &win_) noexcept :
 		visible(visible_),
 		height(height_),
 		expands(expands_),
@@ -275,7 +276,7 @@ protected:
 	void LoadSessionDialog() override;
 	void SaveSessionDialog() override;
 	bool PreOpenCheck(const GUI::gui_string &file) override;
-	bool IsStdinBlocked() override;
+	bool IsStdinBlocked() noexcept override;
 
 	/// Print the current buffer.
 	void Print(bool showDialog) override;
@@ -343,7 +344,7 @@ protected:
 	void CloseOtherFinders(int cmdID);
 	void FindIncrement() override;
 	void Filter() override;
-	bool FilterShowing() override;
+	bool FilterShowing() noexcept override;
 
 	void Find() override;
 	void FindInFiles() override;
@@ -450,16 +451,12 @@ constexpr int ControlIDOfWParam(WPARAM wParam) noexcept {
 	return wParam & 0xffff;
 }
 
-inline HWND HwndOf(GUI::Window w) noexcept {
+inline HWND HwndOf(const GUI::Window &w) noexcept {
 	return static_cast<HWND>(w.GetID());
 }
 
 inline HMENU HmenuID(size_t id) noexcept {
 	return reinterpret_cast<HMENU>(id);
-}
-
-inline POINT *PointPointer(GUI::Point *pt) noexcept {
-	return reinterpret_cast<POINT *>(pt);
 }
 
 #endif

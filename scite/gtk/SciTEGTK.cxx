@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdarg>
 #include <ctime>
+#include <cmath>
 #include <cerrno>
 #include <csignal>
 
@@ -198,6 +199,20 @@ struct SciTEItemFactoryEntry {
 	int callback_action;
 	const char *item_type;
 };
+
+SystemAppearance GetCurrentAppearance(GtkSettings *settings) noexcept {
+	SystemAppearance currentAppearance{};
+	gchar *themeName = nullptr;
+	g_object_get(settings, "gtk-theme-name", &themeName, nullptr);
+	currentAppearance.dark = g_str_has_suffix(themeName, "-dark");
+	currentAppearance.highContrast = g_str_has_prefix(themeName, "HighContrast");
+	if (g_strcmp0(themeName, "HighContrastInverse") == 0) {
+		currentAppearance.dark = true;
+	}
+	//fprintf(stderr, "Theme '%s' %d %d\n", themeName, currentAppearance.dark, currentAppearance.highContrast);
+	g_free(themeName);
+	return currentAppearance;
+}
 
 }
 
@@ -416,6 +431,13 @@ class SciTEGTK : public SciTEBase, UserStripWatcher {
 
 	friend class UserStrip;
 
+private:
+	static MessageBoxChoice messageBoxResult;
+
+	static gint messageBoxKey(GtkWidget *w, GdkEventKey *event, gpointer p);
+	static void messageBoxDestroy(GtkWidget *, gpointer *);
+	static void messageBoxOK(GtkWidget *, gpointer p);
+
 protected:
 
 	GtkWidget *splitPane;
@@ -558,7 +580,7 @@ protected:
 	void CloseOtherFinders(int cmdID);
 	void FindIncrement() override;
 	void Filter() override;
-	bool FilterShowing() override;
+	bool FilterShowing() noexcept override;
 	void FindInFilesResponse(int responseID);
 	void FindInFiles() override;
 	void Replace() override;
@@ -731,7 +753,7 @@ SciTEGTK::SciTEGTK(Extension *ext) : SciTEBase(ext) {
 	pathAbbreviations = GetAbbrevPropertiesFileName();
 
 	settings.reset(gtk_settings_get_default());
-	appearance = CurrentAppearance();
+	appearance = GetCurrentAppearance(settings.get());
 	g_signal_connect(settings.get(), "notify::gtk-theme-name", G_CALLBACK(ThemeSignal), this);
 
 	ReadGlobalPropFile();
@@ -781,27 +803,27 @@ static void destroyDialogFindReplace(GtkWidget *, gpointer *window) {
 void SciTEGTK::WarnUser(int) {}
 
 static GtkWidget *messageBoxDialog = 0;
-static int messageBoxResult = 0;
+SciTEGTK::MessageBoxChoice SciTEGTK::messageBoxResult = MessageBoxChoice::cancel;
 
-static gint messageBoxKey(GtkWidget *w, GdkEventKey *event, gpointer p) {
+gint SciTEGTK::messageBoxKey(GtkWidget *w, GdkEventKey *event, gpointer p) {
 	if (event->keyval == GKEY_Escape) {
 		g_signal_stop_emission_by_name(G_OBJECT(w), "key_press_event");
 		gtk_widget_destroy(GTK_WIDGET(w));
 		messageBoxDialog = 0;
-		messageBoxResult = GPOINTER_TO_INT(p);
+		messageBoxResult = static_cast<MessageBoxChoice>(GPOINTER_TO_INT(p));
 	}
 	return FALSE;
 }
 
-static void messageBoxDestroy(GtkWidget *, gpointer *) {
+void SciTEGTK::messageBoxDestroy(GtkWidget *, gpointer *) {
 	messageBoxDialog = 0;
-	messageBoxResult = 0;
+	messageBoxResult = MessageBoxChoice::cancel;
 }
 
-static void messageBoxOK(GtkWidget *, gpointer p) {
+void SciTEGTK::messageBoxOK(GtkWidget *, gpointer p) {
 	gtk_widget_destroy(GTK_WIDGET(messageBoxDialog));
 	messageBoxDialog = 0;
-	messageBoxResult = GPOINTER_TO_INT(p);
+	messageBoxResult = static_cast<MessageBoxChoice>(GPOINTER_TO_INT(p));
 }
 
 GtkWidget *SciTEGTK::AddMBButton(GtkWidget *dialog, const char *label,
@@ -1408,13 +1430,15 @@ bool SciTEGTK::OpenDialog(const FilePath &directory, const GUI::gui_string &file
 			std::replace(openFilter.begin(), openFilter.end(), '|', '\0');
 			size_t start = 0;
 			while (start < openFilter.length()) {
+				// Localise the filter name such as "All Source" -> "Alle Quelldateien"
 				const char *filterName = openFilter.c_str() + start;
-				GUI::gui_string localised = localiser.Text(filterName, false);
+				const GUI::gui_string localised = localiser.Text(filterName, false);
 				if (localised.length()) {
-					openFilter.erase(start, strlen(filterName));
-					openFilter.insert(start, localised.c_str());
+					openFilter.replace(start, strlen(filterName), localised);
 				}
-				if (openFilter.c_str()[start] == '#') {
+
+				if (openFilter[start] == '#') {
+					// This filter commented out
 					start += strlen(openFilter.c_str() + start) + 1;
 				} else {
 					GtkFileFilter *fileFilter = gtk_file_filter_new();
@@ -2820,7 +2844,7 @@ SciTEBase::MessageBoxChoice SciTEGTK::WindowMessageBox(GUI::Window &w, const GUI
 		dialogsOnScreen++;
 		GtkAccelGroup *accel_group = gtk_accel_group_new();
 
-		messageBoxResult = -1;
+		messageBoxResult = MessageBoxChoice::invalid;
 		messageBoxDialog = gtk_dialog_new();
 		gtk_window_set_title(GTK_WINDOW(messageBoxDialog), appName);
 		gtk_container_set_border_width(GTK_CONTAINER(messageBoxDialog), 0);
@@ -2886,7 +2910,7 @@ SciTEBase::MessageBoxChoice SciTEGTK::WindowMessageBox(GUI::Window &w, const GUI
 
 		gtk_widget_show(messageBoxDialog);
 		gtk_window_add_accel_group(GTK_WINDOW(messageBoxDialog), accel_group);
-		while (messageBoxResult < 0) {
+		while (messageBoxResult == MessageBoxChoice::invalid) {
 			gtk_main_iteration();
 		}
 		dialogsOnScreen--;
@@ -3180,12 +3204,13 @@ gint SciTEGTK::Mouse(GdkEventButton *event) {
 				return FALSE;
 			}
 		}
+		const GUI::Point ptClient(static_cast<int>(std::lround(event->x)), static_cast<int>(std::lround(event->y)));
 		// Convert to screen
 		int ox = 0;
 		int oy = 0;
 		gdk_window_get_origin(WindowFromWidget(PWidget(*w)), &ox, &oy);
-		ContextMenu(*w, GUI::Point(static_cast<int>(event->x) + ox,
-		                     static_cast<int>(event->y) + oy), wSciTE);
+		const GUI::Point ptScreen(ptClient.x + ox, ptClient.y + oy);
+		ContextMenu(*w, ptScreen, ptClient, wSciTE);
 		//fprintf(stderr, "Menu source %s\n",
 		//	(menuSource == IDM_SRCWIN) ? "IDM_SRCWIN" : "IDM_RUNWIN");
 	} else {
@@ -3707,17 +3732,7 @@ void SciTEGTK::CreateMenu() {
 }
 
 SystemAppearance SciTEGTK::CurrentAppearance() const noexcept {
-	SystemAppearance currentAppearance{};
-	gchar *themeName = nullptr;
-	g_object_get(settings.get(), "gtk-theme-name", &themeName, nullptr);
-	currentAppearance.dark = g_str_has_suffix(themeName, "-dark");
-	currentAppearance.highContrast = g_str_has_prefix(themeName, "HighContrast");
-	if (g_strcmp0(themeName, "HighContrastInverse") == 0) {
-		currentAppearance.dark = true;
-	}
-	//fprintf(stderr, "Theme '%s' %d %d\n", themeName, currentAppearance.dark, currentAppearance.highContrast);
-	g_free(themeName);
-	return currentAppearance;
+	return GetCurrentAppearance(settings.get());
 }
 
 void SciTEGTK::CreateStrips(GtkWidget *boxMain) {
@@ -4088,7 +4103,7 @@ void SciTEGTK::Filter() {
 	filterStrip.Show(props.GetInt("strip.button.height", -1));
 }
 
-bool SciTEGTK::FilterShowing() {
+bool SciTEGTK::FilterShowing() noexcept {
 	return filterStrip.visible || (replaceStrip.visible && filterState);
 }
 

@@ -81,11 +81,10 @@ struct FileWorker;
 // Scintilla documents can only be released by calling a method on a Scintilla
 // instance so store a Scintilla instance in the release functor
 struct BufferDocReleaser {
-	GUI::ScintillaWindow *pSci = nullptr;	// Non-owning
-	void operator()(void *pDoc) noexcept;
+	void operator()(SA::IDocumentEditable *pDoc) noexcept;
 };
 
-using BufferDoc = std::unique_ptr<void, BufferDocReleaser>;
+using BufferDoc = std::unique_ptr<SA::IDocumentEditable, BufferDocReleaser>;
 
 class Buffer {
 public:
@@ -164,15 +163,15 @@ public:
 	Buffer *CurrentBuffer() noexcept;
 	const Buffer *CurrentBufferConst() const noexcept;
 	void SetCurrent(BufferIndex index) noexcept;
-	BufferIndex StackNext();
-	BufferIndex StackPrev();
+	BufferIndex StackNext() noexcept;
+	BufferIndex StackPrev() noexcept;
 	void CommitStackSelection();
 	void MoveToStackTop(BufferIndex index);
 	void ShiftTo(BufferIndex indexFrom, BufferIndex indexTo);
 	void Swap(BufferIndex indexA, BufferIndex indexB);
 	bool SingleBuffer() const noexcept;
 	BackgroundActivities CountBackgroundActivities() const;
-	bool SavingInBackground() const;
+	bool SavingInBackground() const noexcept;
 	bool GetVisible(BufferIndex index) const noexcept;
 	void SetVisible(BufferIndex index, bool visible);
 private:
@@ -223,7 +222,7 @@ class StyleAndWords {
 	int styleNumber = 0;
 	std::set<std::string> words;
 public:
-	StyleAndWords() noexcept;
+	StyleAndWords();
 	explicit StyleAndWords(const std::string &definition);
 	[[nodiscard]] bool IsEmpty() const noexcept;
 	[[nodiscard]] bool IsSingleChar() const noexcept;
@@ -344,7 +343,6 @@ protected:
 	StringList apis;
 	std::string apisFileNames;
 	std::string functionDefinition;
-	BufferDocReleaser docReleaser;
 
 	int diagnosticStyleStart;
 	enum { diagnosticStyles=4};
@@ -376,6 +374,7 @@ protected:
 	GUI::Window wStatusBar;
 	GUI::Window wTabBar;
 	GUI::Menu popup;
+	int contextSelection = -1;
 	bool tbVisible;
 	bool tabVisible;
 	bool tabHideOne; // Hide tab bar if one buffer is opened only
@@ -498,8 +497,8 @@ protected:
 	BufferList buffers;
 
 	// Handle buffers
-	void *GetDocumentAt(BufferIndex index);
-	void SwitchDocumentAt(BufferIndex index, void *pdoc);
+	SA::IDocumentEditable *GetDocumentAt(BufferIndex index);
+	void SwitchDocumentAt(BufferIndex index, SA::IDocumentEditable *pdoc);
 	void SaveFolds(std::vector<SA::Line> &folds);
 	void RestoreFolds(const std::vector<SA::Line> &folds);
 	void UpdateBuffersCurrent();
@@ -538,8 +537,8 @@ protected:
 	virtual SystemAppearance CurrentAppearance() const noexcept;
 	void CheckAppearanceChanged();
 	void SetPaneFocus(bool editPane) noexcept;
-	GUI::ScintillaWindow &PaneFocused();
-	GUI::ScintillaWindow &PaneSource(int destination);
+	GUI::ScintillaWindow &PaneFocused() noexcept;
+	GUI::ScintillaWindow &PaneSource(int destination) noexcept;
 	intptr_t CallFocusedElseDefault(int defaultValue, SA::Message msg, uintptr_t wParam = 0, intptr_t lParam = 0);
 	void CallChildren(SA::Message msg, uintptr_t wParam = 0, intptr_t lParam = 0);
 	std::string GetTranslationToAbout(const char *const propname, bool retainIfNotFound = true);
@@ -658,6 +657,7 @@ protected:
 	SelectedRange GetSelectedRange();
 	void SetSelection(SA::Position anchor, SA::Position currentPos);
 	std::string GetCTag(GUI::ScintillaWindow *pw);
+	static void DropSelectionAt(GUI::ScintillaWindow &win, int selection);
 	virtual std::string GetRangeInUIEncoding(GUI::ScintillaWindow &win, SA::Span span);
 	static std::string GetLine(GUI::ScintillaWindow &win, SA::Line line);
 	void RangeExtend(GUI::ScintillaWindow &wCurrent, SA::Span &range,
@@ -674,6 +674,7 @@ protected:
 	virtual std::string EncodeString(const std::string &s);
 	virtual void Find() = 0;
 	enum class MessageBoxChoice {
+		invalid = -1,
 		ok,
 		cancel,
 		yes,
@@ -706,7 +707,7 @@ protected:
 	virtual void FindIncrement() = 0;
 	int IncrementSearchMode();
 	virtual void Filter() = 0;
-	virtual bool FilterShowing() { return false; }
+	virtual bool FilterShowing() noexcept { return false; }
 	int FilterSearch();
 	virtual void FindInFiles() = 0;
 	virtual void Replace() = 0;
@@ -826,7 +827,7 @@ protected:
 	virtual void CheckMenusClipboard();
 	virtual void CheckMenus();
 	virtual void AddToPopUp(const char *label, int cmd = 0, bool enabled = true) = 0;
-	void ContextMenu(GUI::ScintillaWindow &wSource, GUI::Point pt, GUI::Window wCmd);
+	void ContextMenu(GUI::ScintillaWindow &wSource, GUI::Point pt, GUI::Point ptClient, GUI::Window wCmd);
 
 	void DeleteFileStackMenu();
 	void SetFileStackMenu();
@@ -911,7 +912,7 @@ protected:
 	bool StartMacroList(const char *words);
 	void ContinueMacroList(const char *stext);
 	bool ProcessCommandLine(const std::vector<GUI::gui_string> &args, int phase);
-	virtual bool IsStdinBlocked();
+	virtual bool IsStdinBlocked() noexcept;
 	void OpenFromStdin(bool UseOutputPane);
 	void OpenFilesFromStdin();
 	virtual bool GrepIntoDirectory(const FilePath &directory);
@@ -939,9 +940,9 @@ protected:
 	SA::ScintillaCall &PaneCaller(Pane p) noexcept override;
 
 	// Valid CurrentWord characters
-	bool iswordcharforsel(char ch);
-	bool isfilenamecharforsel(char ch);
-	bool islexerwordcharforsel(char ch);
+	bool iswordcharforsel(char ch) noexcept;
+	bool isfilenamecharforsel(char ch) noexcept;
+	bool islexerwordcharforsel(char ch) noexcept;
 
 	CurrentWordHighlight currentWordHighlight;
 	void HighlightCurrentWord(bool highlight);
