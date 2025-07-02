@@ -8,6 +8,7 @@
 
 .SUFFIXES: .cxx .properties
 WINDRES ?= windres
+windir = 1 # FUCK
 
 # normalize changes Unix style '/' directory separator to '\' for Windows shell
 ifeq (\,$(shell echo \\))

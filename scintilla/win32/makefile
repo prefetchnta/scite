@@ -11,6 +11,7 @@
 
 DIR_O=.
 DIR_BIN=../bin
+windir = 1 # FUCK
 
 COMPONENT = $(DIR_BIN)/Scintilla.dll
 LIBSCI = $(DIR_BIN)/libscintilla.a

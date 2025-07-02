@@ -16,6 +16,7 @@
 
 DIR_O=.
 DIR_BIN=../bin
+windir = 1 # FUCK
 
 WARNINGS = -Wpedantic -Wall -Wextra
 
