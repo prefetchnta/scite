@@ -128,7 +128,7 @@ protected:
 	std::string m_lastPropertyValue;
 };
 
-LexerModule lmEDIFACT(SCLEX_EDIFACT, LexerEDIFACT::Factory, "edifact");
+extern const LexerModule lmEDIFACT(SCLEX_EDIFACT, LexerEDIFACT::Factory, "edifact");
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -168,7 +168,8 @@ void LexerEDIFACT::Lex(Sci_PositionU startPos, Sci_Position length, int, IDocume
 	{
 		posCurrent = ForwardPastWhitespace(pAccess, posCurrent, posFinish);
 		// Mark whitespace as default
-		styler.ColourTo(posCurrent - 1, SCE_EDI_DEFAULT);
+		if (posCurrent > 0)
+			styler.ColourTo(posCurrent - 1, SCE_EDI_DEFAULT);
 		if (posCurrent >= posFinish)
 			break;
 

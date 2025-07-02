@@ -655,6 +655,14 @@ bool ScintillaCall::StyleGetCheckMonospaced(int style) {
 	return Call(Message::StyleGetCheckMonospaced, style);
 }
 
+void ScintillaCall::StyleSetStretch(int style, Scintilla::FontStretch stretch) {
+	Call(Message::StyleSetStretch, style, static_cast<intptr_t>(stretch));
+}
+
+FontStretch ScintillaCall::StyleGetStretch(int style) {
+	return static_cast<Scintilla::FontStretch>(Call(Message::StyleGetStretch, style));
+}
+
 void ScintillaCall::StyleSetInvisibleRepresentation(int style, const char *representation) {
 	CallString(Message::StyleSetInvisibleRepresentation, style, representation);
 }
@@ -797,6 +805,10 @@ void ScintillaCall::BeginUndoAction() {
 
 void ScintillaCall::EndUndoAction() {
 	Call(Message::EndUndoAction);
+}
+
+int ScintillaCall::UndoSequence() {
+	return static_cast<int>(Call(Message::GetUndoSequence));
 }
 
 int ScintillaCall::UndoActions() {
@@ -1095,6 +1107,22 @@ int ScintillaCall::AutoCGetMaxHeight() {
 	return static_cast<int>(Call(Message::AutoCGetMaxHeight));
 }
 
+void ScintillaCall::AutoCSetStyle(int style) {
+	Call(Message::AutoCSetStyle, style);
+}
+
+int ScintillaCall::AutoCGetStyle() {
+	return static_cast<int>(Call(Message::AutoCGetStyle));
+}
+
+void ScintillaCall::AutoCSetImageScale(int scalePercent) {
+	Call(Message::AutoCSetImageScale, scalePercent);
+}
+
+int ScintillaCall::AutoCGetImageScale() {
+	return static_cast<int>(Call(Message::AutoCGetImageScale));
+}
+
 void ScintillaCall::SetIndent(int indentSize) {
 	Call(Message::SetIndent, indentSize);
 }
@@ -1239,6 +1267,26 @@ ChangeHistoryOption ScintillaCall::ChangeHistory() {
 	return static_cast<Scintilla::ChangeHistoryOption>(Call(Message::GetChangeHistory));
 }
 
+void ScintillaCall::SetUndoSelectionHistory(Scintilla::UndoSelectionHistoryOption undoSelectionHistory) {
+	Call(Message::SetUndoSelectionHistory, static_cast<uintptr_t>(undoSelectionHistory));
+}
+
+UndoSelectionHistoryOption ScintillaCall::UndoSelectionHistory() {
+	return static_cast<Scintilla::UndoSelectionHistoryOption>(Call(Message::GetUndoSelectionHistory));
+}
+
+void ScintillaCall::SetSelectionSerialized(const char *selectionString) {
+	CallString(Message::SetSelectionSerialized, 0, selectionString);
+}
+
+Position ScintillaCall::SelectionSerialized(char *selectionString) {
+	return CallPointer(Message::GetSelectionSerialized, 0, selectionString);
+}
+
+std::string ScintillaCall::SelectionSerialized() {
+	return CallReturnString(Message::GetSelectionSerialized, 0);
+}
+
 Line ScintillaCall::FirstVisibleLine() {
 	return Call(Message::GetFirstVisibleLine);
 }
@@ -1325,6 +1373,10 @@ Position ScintillaCall::PositionFromLine(Line line) {
 
 void ScintillaCall::LineScroll(Position columns, Line lines) {
 	Call(Message::LineScroll, columns, lines);
+}
+
+void ScintillaCall::ScrollVertical(Line docLine, Line subLine) {
+	Call(Message::ScrollVertical, docLine, subLine);
 }
 
 void ScintillaCall::ScrollCaret() {
@@ -1967,8 +2019,16 @@ void ScintillaCall::Tab() {
 	Call(Message::Tab);
 }
 
+void ScintillaCall::LineIndent() {
+	Call(Message::LineIndent);
+}
+
 void ScintillaCall::BackTab() {
 	Call(Message::BackTab);
+}
+
+void ScintillaCall::LineDedent() {
+	Call(Message::LineDedent);
 }
 
 void ScintillaCall::NewLine() {
@@ -2711,6 +2771,22 @@ void ScintillaCall::CopyAllowLine() {
 	Call(Message::CopyAllowLine);
 }
 
+void ScintillaCall::CutAllowLine() {
+	Call(Message::CutAllowLine);
+}
+
+void ScintillaCall::SetCopySeparator(const char *separator) {
+	CallString(Message::SetCopySeparator, 0, separator);
+}
+
+int ScintillaCall::CopySeparator(char *separator) {
+	return static_cast<int>(CallPointer(Message::GetCopySeparator, 0, separator));
+}
+
+std::string ScintillaCall::CopySeparator() {
+	return CallReturnString(Message::GetCopySeparator, 0);
+}
+
 void *ScintillaCall::CharacterPointer() {
 	return reinterpret_cast<void *>(Call(Message::GetCharacterPointer));
 }
@@ -2755,8 +2831,8 @@ int ScintillaCall::ExtraDescent() {
 	return static_cast<int>(Call(Message::GetExtraDescent));
 }
 
-int ScintillaCall::MarkerSymbolDefined(int markerNumber) {
-	return static_cast<int>(Call(Message::MarkerSymbolDefined, markerNumber));
+MarkerSymbol ScintillaCall::MarkerSymbolDefined(int markerNumber) {
+	return static_cast<Scintilla::MarkerSymbol>(Call(Message::MarkerSymbolDefined, markerNumber));
 }
 
 void ScintillaCall::MarginSetText(Line line, const char *text) {

@@ -13,7 +13,9 @@
 #define SCINTILLAEDITBASE_H
 
 #include <cstddef>
+#include <cstdint>
 
+#include <string>
 #include <string_view>
 #include <vector>
 #include <optional>
@@ -139,6 +141,7 @@ protected:
 	void mouseReleaseEvent(QMouseEvent *event) override;
 	void mouseDoubleClickEvent(QMouseEvent *event) override;
 	void mouseMoveEvent(QMouseEvent *event) override;
+	void leaveEvent(QEvent *event) override;
 	void contextMenuEvent(QContextMenuEvent *event) override;
 	void dragEnterEvent(QDragEnterEvent *event) override;
 	void dragLeaveEvent(QDragLeaveEvent *event) override;
@@ -159,8 +162,6 @@ private:
 	int wheelDelta;
 
 	static bool IsHangul(const QChar qchar);
-	void MoveImeCarets(Scintilla::Position offset);
-	void DrawImeIndicator(int indicator, int len);
 	static Scintilla::KeyMod ModifiersOfKeyboard();
 };
 

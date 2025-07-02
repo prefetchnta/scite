@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <ctime>
 
+#include <compare>
 #include <tuple>
 #include <string>
 #include <string_view>
@@ -159,23 +160,23 @@ std::string SciTEBase::DiscoverLanguage() {
 	std::string buf = wEditor.StringOfRange(SA::Span(0, length));
 	std::string languageOverride;
 	std::string_view line = ExtractLine(buf);
-	if (StartsWith(line, "<?xml")) {
+	if (line.starts_with("<?xml")) {
 		languageOverride = "xml";
-	} else if (StartsWith(line, "#!")) {
+	} else if (line.starts_with("#!")) {
 		line.remove_prefix(2);
 		std::string l1(line);
-		std::replace(l1.begin(), l1.end(), '\\', ' ');
-		std::replace(l1.begin(), l1.end(), '/', ' ');
-		std::replace(l1.begin(), l1.end(), '\t', ' ');
+		std::ranges::replace(l1, '\\', ' ');
+		std::ranges::replace(l1, '/', ' ');
+		std::ranges::replace(l1, '\t', ' ');
 		Substitute(l1, "  ", " ");
 		Substitute(l1, "  ", " ");
 		Substitute(l1, "  ", " ");
 		::Remove(l1, std::string("\r"));
 		::Remove(l1, std::string("\n"));
-		if (StartsWith(l1, " ")) {
+		if (l1.starts_with(" ")) {
 			l1 = l1.substr(1);
 		}
-		std::replace(l1.begin(), l1.end(), ' ', '\0');
+		std::ranges::replace(l1, ' ', '\0');
 		l1.append(1, '\0');
 		const char *word = l1.c_str();
 		while (*word) {
@@ -306,11 +307,9 @@ void SciTEBase::OpenCurrentFile(const long long fileSize, bool suppressMessage, 
 
 	CurrentBuffer()->SetTimeFromFile();
 
-	wEditor.BeginUndoAction();	// Group together clear and insert
-	wEditor.ClearAll();
-
 	CurrentBuffer()->lifeState = Buffer::LifeState::reading;
 	if (asynchronous) {
+		wEditor.ClearAll();
 		// Turn grey while loading
 		wEditor.StyleSetBack(StyleDefault, 0xEEEEEE);
 		wEditor.SetReadOnly(true);
@@ -328,21 +327,23 @@ void SciTEBase::OpenCurrentFile(const long long fileSize, bool suppressMessage, 
 		CurrentBuffer()->pFileWorker->sleepTime = props.GetInt("asynchronous.sleep");
 		PerformOnNewThread(CurrentBuffer()->pFileWorker.get());
 	} else {
-		wEditor.Allocate(bufferSize);
-
 		std::unique_ptr<Utf8_16::Reader> convert = Utf8_16::Reader::Allocate();
-		std::vector<char> data(blockSize);
-		size_t lenFile = fread(data.data(), 1, data.size(), fp);
-		while (lenFile > 0) {
-			const std::string_view dataBlock = convert->convert(std::string_view(data.data(), lenFile));
-			AddText(wEditor, dataBlock);
-			lenFile = fread(data.data(), 1, data.size(), fp);
+		{
+			UndoBlock ub(wEditor);	// Group together clear and insert
+			wEditor.ClearAll();
+			wEditor.Allocate(bufferSize);
+			std::vector<char> data(blockSize);
+			size_t lenFile = fread(data.data(), 1, data.size(), fp);
+			while (lenFile > 0) {
+				const std::string_view dataBlock = convert->convert(std::string_view(data.data(), lenFile));
+				AddText(wEditor, dataBlock);
+				lenFile = fread(data.data(), 1, data.size(), fp);
+			}
+			fclose(fp);
+			// Handle case where convert is holding a lead surrogate but no more data
+			const std::string_view dataTrail = convert->convert("");
+			AddText(wEditor, dataTrail);
 		}
-		fclose(fp);
-		// Handle case where convert is holding a lead surrogate but no more data
-		const std::string_view dataTrail = convert->convert("");
-		AddText(wEditor, dataTrail);
-		wEditor.EndUndoAction();
 
 		CurrentBuffer()->unicodeMode = convert->getEncoding();
 
@@ -679,26 +680,26 @@ bool SciTEBase::OpenSelected() {
 	}
 
 #if !defined(GTK)
-	if (StartsWith(selName, "http:") ||
-			StartsWith(selName, "https:") ||
-			StartsWith(selName, "ftp:") ||
-			StartsWith(selName, "ftps:") ||
-			StartsWith(selName, "news:") ||
-			StartsWith(selName, "mailto:")) {
+	if (selName.starts_with("http:") ||
+			selName.starts_with("https:") ||
+			selName.starts_with("ftp:") ||
+			selName.starts_with("ftps:") ||
+			selName.starts_with("news:") ||
+			selName.starts_with("mailto:")) {
 		std::string cmd = selName;
 		AddCommand(cmd, "", JobSubsystem::shell);
 		return false;	// Job is done
 	}
 #endif
 
-	if (StartsWith(selName, "file://")) {
+	if (selName.starts_with("file://")) {
 		selName.erase(0, 7);
 		if (selName[0] == '/' && selName[2] == ':') { // file:///C:/filename.ext
 			selName.erase(0, 1);
 		}
 	}
 
-	if (StartsWith(selName, "~/")) {
+	if (selName.starts_with("~/")) {
 		selName.erase(0, 2);
 		const FilePath selPath(GUI::StringFromUTF8(selName));
 		const FilePath expandedPath(FilePath::UserHomeDirectory(), selPath);
@@ -830,7 +831,7 @@ void SciTEBase::Revert() {
 			const std::string contents = filePath.Read();
 			// Check for BOM that matches file mode
 			const std::string_view svUtf8BOM(UTF8BOM);
-			if ((uniMode == UniMode::utf8) && !StartsWith(contents, svUtf8BOM)) {
+			if ((uniMode == UniMode::utf8) && !contents.starts_with(svUtf8BOM)) {
 				// Should have BOM but doesn't so use full load
 				OpenCurrentFile(fileLength, false, false);
 			} else {
@@ -1146,12 +1147,12 @@ void SciTEBase::StripTrailingSpaces() {
 	for (SA::Line line = 0; line < maxLines; line++) {
 		const SA::Position lineStart = wEditor.LineStart(line);
 		const SA::Position lineEnd = wEditor.LineEnd(line);
-		SA::Position i = lineEnd;
-		while ((i > lineStart) && IsSpaceOrTab(wEditor.CharacterAt(i-1))) {
-			i--;
+		SA::Position firstSpace = lineEnd;
+		while ((firstSpace > lineStart) && IsSpaceOrTab(wEditor.CharacterAt(firstSpace-1))) {
+			firstSpace--;
 		}
-		if (i < lineEnd) {
-			wEditor.DeleteRange(i, lineEnd-i);
+		if (firstSpace < lineEnd) {
+			wEditor.DeleteRange(firstSpace, lineEnd-firstSpace);
 		}
 	}
 }
@@ -1173,7 +1174,7 @@ void SciTEBase::EnsureFinalNewLine() {
 bool SciTEBase::PrepareBufferForSave(const FilePath &saveName) {
 	bool retVal = false;
 	// Perform clean ups on text before saving
-	wEditor.BeginUndoAction();
+	UndoBlock ub(wEditor);
 	if (stripTrailingSpaces)
 		StripTrailingSpaces();
 	if (ensureFinalLineEnd)
@@ -1183,8 +1184,6 @@ bool SciTEBase::PrepareBufferForSave(const FilePath &saveName) {
 
 	if (extender)
 		retVal = extender->OnBeforeSave(saveName.AsUTF8().c_str());
-
-	wEditor.EndUndoAction();
 
 	return retVal;
 }
@@ -1325,7 +1324,7 @@ bool SciTEBase::Save(SaveFlags sf) {
 			propsSuggestion.Set("TimeStamp", timeBuff);
 			propsSuggestion.SetPath("SciteUserHome", GetSciteUserHome());
 			std::string savePathSuggestion = propsSuggestion.GetExpandedString("save.path.suggestion");
-			std::replace(savePathSuggestion.begin(), savePathSuggestion.end(), '\\', '/');  // To accept "\" on Unix
+			std::ranges::replace(savePathSuggestion, '\\', '/');  // To accept "\" on Unix
 			if (savePathSuggestion.size() > 0) {
 				filePath = FilePath(GUI::StringFromUTF8(savePathSuggestion)).NormalizePath();
 			}

@@ -214,16 +214,16 @@ void Utf16_Iter::operator++() noexcept {
 		}
 
 		if (m_nCur16 < 0x80) {
-			m_nCur = m_nCur16 & 0xFF;
+			m_nCur = static_cast<utf8>(m_nCur16 & 0xFF);
 			m_eState = eStart;
 		} else if (m_nCur16 < 0x800) {
-			m_nCur = 0xC0 | ((m_nCur16 >> 6) & 0xFF);
+			m_nCur = static_cast<utf8>(0xC0 | ((m_nCur16 >> 6) & 0xFF));
 			m_eState = eFinal;
 		} else if (m_nCur16 < SURROGATE_FIRST_VALUE) {
-			m_nCur = 0xE0 | ((m_nCur16 >> 12) & 0xFF);
+			m_nCur = static_cast<utf8>(0xE0 | ((m_nCur16 >> 12) & 0xFF));
 			m_eState = ePenultimate;
 		} else {
-			m_nCur = 0xF0 | ((m_nCur16 >> 18) & 0xFF);
+			m_nCur = static_cast<utf8>(0xF0 | ((m_nCur16 >> 18) & 0xFF));
 			m_eState = eSecondOf4Bytes;
 		}
 		break;
@@ -244,9 +244,9 @@ void Utf16_Iter::operator++() noexcept {
 
 utf16 Utf16_Iter::read(const ubyte *pRead) const noexcept {
 	if (m_eEncoding == UniMode::uni16LE) {
-		return pRead[0] | (pRead[1] << 8);
+		return pRead[0] | static_cast<utf16>(pRead[1] << 8);
 	} else {
-		return pRead[1] | (pRead[0] << 8);
+		return pRead[1] | static_cast<utf16>(pRead[0] << 8);
 	}
 }
 
@@ -255,6 +255,40 @@ bool Utf16_Iter::retained() const noexcept {
 }
 
 // ==================================================================
+
+bool mem_equal(const void *ptr1, const void *ptr2, size_t num) noexcept {
+	return 0 == memcmp(ptr1, ptr2, num);
+}
+
+UniMode DetermineEncoding(std::string_view text) noexcept {
+	if (text.length() >= 2) {
+		if (mem_equal(text.data(), k_Boms[eUtf16BigEndian], 2)) {
+			return UniMode::uni16BE;
+		}
+		if (mem_equal(text.data(), k_Boms[eUtf16LittleEndian], 2)) {
+			return UniMode::uni16LE;
+		}
+		if (text.length() >= 3 && mem_equal(text.data(), k_Boms[eUtf8], 3)) {
+			return UniMode::utf8;
+		}
+	}
+
+	return UniMode::uni8Bit;
+}
+
+size_t LengthBOM(UniMode encoding) noexcept {
+	switch (encoding) {
+	case UniMode::uni8Bit:
+	case UniMode::cookie:
+		return 0;
+	case UniMode::uni16BE:
+	case UniMode::uni16LE:
+		return 2;
+	case UniMode::utf8:
+		return 3;
+	}
+	return 0;
+}
 
 // Reads UTF16 and outputs UTF8
 class Utf8_16_Reader : public Utf8_16::Reader {
@@ -276,7 +310,6 @@ public:
 	}
 
 private:
-	int determineEncoding(std::string_view text) noexcept;
 	UniMode m_eEncoding = UniMode::uni8Bit;
 	// m_pNewBuf may be allocated by Utf8_16_Read::convert
 	std::vector<ubyte> m_pNewBuf;
@@ -291,16 +324,14 @@ Utf8_16_Reader::Utf8_16_Reader() noexcept = default;
 Utf8_16_Reader::~Utf8_16_Reader() noexcept = default;
 
 std::string_view Utf8_16_Reader::convert(std::string_view buf) {
-	int nSkip = 0;
 	if (m_bFirstRead) {
-		nSkip = determineEncoding(buf);
+		m_eEncoding = DetermineEncoding(buf);
+		buf.remove_prefix(LengthBOM(m_eEncoding));
 		if (m_eEncoding == UniMode::uni8Bit) {
 			m_eEncoding = CodingCookieValue(buf);
 		}
 		m_bFirstRead = false;
 	}
-
-	buf.remove_prefix(nSkip);
 
 	if ((m_eEncoding == UniMode::uni8Bit) || (m_eEncoding == UniMode::utf8) || (m_eEncoding == UniMode::cookie)) {
 		// Do nothing, pass through omitting BOM when present
@@ -321,31 +352,6 @@ std::string_view Utf8_16_Reader::convert(std::string_view buf) {
 	return std::string_view(reinterpret_cast<const char *>(m_pNewBuf.data()), m_pNewBuf.size());
 }
 
-bool mem_equal(const void *ptr1, const void *ptr2, size_t num) noexcept {
-	return 0 == memcmp(ptr1, ptr2, num);
-}
-
-int Utf8_16_Reader::determineEncoding(std::string_view text) noexcept {
-	m_eEncoding = UniMode::uni8Bit;
-
-	int nRet = 0;
-
-	if (text.length() > 1) {
-		if (mem_equal(text.data(), k_Boms[eUtf16BigEndian], 2)) {
-			m_eEncoding = UniMode::uni16BE;
-			nRet = 2;
-		} else if (mem_equal(text.data(), k_Boms[eUtf16LittleEndian], 2)) {
-			m_eEncoding = UniMode::uni16LE;
-			nRet = 2;
-		} else if (text.length() > 2 && mem_equal(text.data(), k_Boms[eUtf8], 3)) {
-			m_eEncoding = UniMode::utf8;
-			nRet = 3;
-		}
-	}
-
-	return nRet;
-}
-
 }
 
 namespace Utf8_16 {
@@ -364,7 +370,7 @@ namespace {
 // Read in a UTF-8 buffer and write out to UTF-16 or UTF-8
 class Utf8_16_Write : public Utf8_16::Writer {
 public:
-	explicit Utf8_16_Write(UniMode unicodeMode, size_t bufferSize) noexcept;
+	explicit Utf8_16_Write(UniMode unicodeMode, size_t bufferSize);
 
 	// Deleted so Utf8_16_Write objects can not be copied.
 	Utf8_16_Write(const Utf8_16_Write &) = delete;
@@ -383,7 +389,7 @@ protected:
 	bool m_bFirstWrite = true;
 };
 
-Utf8_16_Write::Utf8_16_Write(UniMode unicodeMode, size_t bufferSize) noexcept {
+Utf8_16_Write::Utf8_16_Write(UniMode unicodeMode, size_t bufferSize) {
 	if (unicodeMode != UniMode::cookie) {	// Save file with cookie without BOM.
 		m_eEncoding = static_cast<encodingType>(static_cast<int>(unicodeMode));
 	}
@@ -397,9 +403,9 @@ Utf8_16_Write::~Utf8_16_Write() noexcept = default;
 
 void Utf8_16_Write::appendCodeUnit(int codeUnit) {
 	if (m_eEncoding == eUtf16LittleEndian) {
-		m_buf16.push_back(codeUnit & 0xFFFF);
+		m_buf16.push_back(static_cast<utf16>(codeUnit & 0xFFFF));
 	} else {
-		const utf16 swapped = ((codeUnit & 0xFF) << 8) + ((codeUnit & 0xFF00) >> 8);
+		const utf16 swapped = static_cast<utf16>((codeUnit & 0xFF) << 8) | ((codeUnit & 0xFF00) >> 8);
 		m_buf16.push_back(swapped);
 	}
 }

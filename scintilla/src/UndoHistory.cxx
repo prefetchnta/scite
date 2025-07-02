@@ -350,6 +350,18 @@ void UndoHistory::EndUndoAction() noexcept {
 	}
 }
 
+int UndoHistory::UndoSequenceDepth() const noexcept {
+	return undoSequenceDepth;
+}
+
+bool UndoHistory::AfterUndoSequenceStart() const noexcept {
+	if (currentAction == 0) {
+		return false;
+	}
+	// Count back to last sequence start?
+	return !actions.AtStart(currentAction-1);
+}
+
 void UndoHistory::DropUndoSequence() noexcept {
 	undoSequenceDepth = 0;
 }

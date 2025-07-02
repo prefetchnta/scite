@@ -3,12 +3,15 @@
  ** Tests WordList, WordClassifier, and SubStyles
  **/
 
+#include <cassert>
+
 #include <string>
 #include <string_view>
 #include <vector>
 #include <map>
 
 #include "WordList.h"
+#include "CharacterSet.h"
 #include "SubStyles.h"
 
 #include "catch.hpp"
@@ -39,6 +42,24 @@ TEST_CASE("WordList") {
 		REQUIRE(wl.InList(sStruct));
 		std::string sClass = "class";
 		REQUIRE(!wl.InList(sClass));
+	}
+
+	SECTION("StringViewInList") {
+		wl.Set("else struct i ^gtk");
+		std::string_view svStruct = "struct";
+		REQUIRE(wl.InList(svStruct));
+		std::string_view svClass = "class";
+		REQUIRE(!wl.InList(svClass));
+
+		// Test single characters
+		std::string_view svI = "i";
+		REQUIRE(wl.InList(svI));
+		std::string_view svA = "a";
+		REQUIRE(!wl.InList(svA));
+
+		// Test prefix
+		std::string_view svPrefix = "gtk_prefix";
+		REQUIRE(wl.InList(svPrefix));
 	}
 
 	SECTION("InListUnicode") {
@@ -148,8 +169,8 @@ TEST_CASE("WordClassifier") {
 
 	SECTION("ValueFor") {
 		wc.Allocate(key, 2);
-		wc.SetIdentifiers(key, "else if then");
-		wc.SetIdentifiers(type, "double float int long");
+		wc.SetIdentifiers(key, "else if then", false);
+		wc.SetIdentifiers(type, "double float int long", false);
 		REQUIRE(wc.ValueFor("if") == key);
 		REQUIRE(wc.ValueFor("double") == type);
 		REQUIRE(wc.ValueFor("fish") < 0);

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <ctime>
 
+#include <compare>
 #include <tuple>
 #include <string>
 #include <string_view>
@@ -130,6 +131,8 @@ void Buffer::AbandonAutomaticSave() {
 	}
 }
 
+namespace {
+
 constexpr Buffer::FutureDo operator&(Buffer::FutureDo a, Buffer::FutureDo b) noexcept {
 	return static_cast<Buffer::FutureDo>(static_cast<int>(a) & static_cast<int>(b));
 }
@@ -140,6 +143,8 @@ constexpr Buffer::FutureDo operator|(Buffer::FutureDo a, Buffer::FutureDo b) noe
 
 constexpr Buffer::FutureDo operator~(Buffer::FutureDo a) noexcept {
 	return static_cast<Buffer::FutureDo>(~static_cast<int>(a));
+}
+
 }
 
 void Buffer::ScheduleFinishSave() noexcept {
@@ -596,7 +601,9 @@ FilePath SciTEBase::UserFilePath(const GUI::gui_char *name) {
 	return FilePath(GetSciteUserHome(), nameWithVisibility.c_str());
 }
 
-static std::string IndexPropKey(const char *bufPrefix, BufferIndex bufIndex, const char *bufAppendix) {
+namespace {
+
+std::string IndexPropKey(const char *bufPrefix, BufferIndex bufIndex, const char *bufAppendix) {
 	std::string pKey = bufPrefix;
 	pKey += '.';
 	pKey += StdStringFromInteger(bufIndex + 1);
@@ -605,6 +612,8 @@ static std::string IndexPropKey(const char *bufPrefix, BufferIndex bufIndex, con
 		pKey += bufAppendix;
 	}
 	return pKey;
+}
+
 }
 
 void SciTEBase::LoadSessionFile(const GUI::gui_char *sessionName) {
@@ -624,7 +633,7 @@ void SciTEBase::LoadSessionFile(const GUI::gui_char *sessionName) {
 }
 
 void SciTEBase::RestoreRecentMenu() {
-	const FilePosition fp(SelectedRange(0, 0), 0);
+	const FilePosition fp(SelectedRange(0, 0), {});
 
 	DeleteFileStackMenu();
 
@@ -722,7 +731,7 @@ void SciTEBase::RestoreSession() {
 		propKey = IndexPropKey("buffer", i, "position");
 		const SA::Position pos = propsSession.GetInteger(propKey) - 1;	// -1 for 1 -> 0 based
 
-		bufferState.file.filePosition = FilePosition(SelectedRange(pos, pos), scroll);
+		bufferState.file.filePosition = FilePosition(SelectedRange(pos, pos), { scroll, 0 });
 
 		if (props.GetInt("session.bookmarks")) {
 			propKey = IndexPropKey("buffer", i, "bookmarks");
@@ -822,8 +831,8 @@ void SciTEBase::SaveSessionFile(const GUI::gui_char *sessionName) {
 				propKey = IndexPropKey("buffer", i, "position");
 				fprintf(sessionFile, "%s=%s\n", propKey.c_str(), sPos.c_str());
 
-				const SA::Line scroll = buff.file.filePosition.scrollPosition;
-				const std::string sScroll = std::to_string(scroll);
+				const ScrollDocWithOffset scroll = buff.file.filePosition.scrollPosition;
+				const std::string sScroll = std::to_string(scroll.lineDoc);
 				propKey = IndexPropKey("buffer", i, "scroll");
 				fprintf(sessionFile, "%s=%s\n", propKey.c_str(), sScroll.c_str());
 
@@ -1197,7 +1206,7 @@ GUI::gui_string AbbreviateWithTilde(const GUI::gui_string &path) {
 	FilePath homePath = FilePath::UserHomeDirectory();
 	if (homePath.IsSet()) {
 		const GUI::gui_string_view homeDirectory = homePath.AsInternal();
-		if (StartsWith(path, homeDirectory)) {
+		if (path.starts_with(homeDirectory)) {
 			return GUI::gui_string(GUI_TEXT("~")) + path.substr(homeDirectory.size());
 		}
 	}
@@ -1387,16 +1396,18 @@ void SciTEBase::RemoveFileFromStack(const FilePath &file) {
 }
 
 FilePosition SciTEBase::GetFilePosition() {
-	return FilePosition(GetSelectedRange(), GetCurrentScrollPosition());
+	return FilePosition(GetSelectedRange(), GetCurrentScrollPosition(), wEditor.SelectionSerialized());
 }
 
 void SciTEBase::DisplayAround(const FilePosition &fp) {
 	if ((fp.selection.position != SA::InvalidPosition) && (fp.selection.anchor != SA::InvalidPosition)) {
-		SetSelection(fp.selection.anchor, fp.selection.position);
+		if (fp.selectionDetails.empty()) {
+			SetSelection(fp.selection.anchor, fp.selection.position);
+		} else {
+			wEditor.SetSelectionSerialized(fp.selectionDetails.c_str());
+		}
 
-		const SA::Line curTop = wEditor.FirstVisibleLine();
-		const SA::Line lineTop = wEditor.VisibleFromDocLine(fp.scrollPosition);
-		wEditor.LineScroll(0, lineTop - curTop);
+		wEditor.ScrollVertical(fp.scrollPosition.lineDoc, fp.scrollPosition.subLine);
 		wEditor.ChooseCaretX();
 	}
 }
@@ -1575,7 +1586,7 @@ void SciTEBase::ToolsMenu(int item) {
 
 namespace {
 
-static SA::Line DecodeMessage(const char *cdoc, std::string &sourcePath, int format, SA::Position &column) {
+SA::Line DecodeMessage(const char *cdoc, std::string &sourcePath, int format, SA::Position &column) {
 	sourcePath.clear();
 	column = -1; // default to not detected
 	switch (format) {
@@ -1853,8 +1864,8 @@ static SA::Line DecodeMessage(const char *cdoc, std::string &sourcePath, int for
 			const size_t lenLine = strlen(idLine);
 			const char *file = strstr(cdoc, idFile);
 			const char *line = strstr(cdoc, idLine);
-			const char *lineend = strrchr(cdoc, ':');
 			if (line && file && (line > file)) {
+				const char *lineend = strrchr(cdoc, ':');
 				file += lenFile;
 				const size_t length = line - file;
 				sourcePath.assign(file, length);
@@ -1909,9 +1920,12 @@ static SA::Line DecodeMessage(const char *cdoc, std::string &sourcePath, int for
 	case SCE_ERR_BASH: {
 			const char *bashDiagnosticMark = ": line ";
 			const char *line = strstr(cdoc, bashDiagnosticMark);
-			sourcePath.assign(cdoc, line);
-			const SA::Line sourceNumber = IntegerFromText(line + strlen(bashDiagnosticMark)) - 1;
-			return sourceNumber;
+			if (line) {
+				sourcePath.assign(cdoc, line);
+				const SA::Line sourceNumber = IntegerFromText(line + strlen(bashDiagnosticMark)) - 1;
+				return sourceNumber;
+			}
+			break;
 		}
 
 	case SCE_ERR_DIFF_MESSAGE: {
@@ -2110,14 +2124,18 @@ void SciTEBase::GoMessage(int dir) {
 					const bool isAdd = message.find("+++ ") == 0;
 					const SA::Line atLine = lookLine + (isAdd ? 1 : 2); // lines are in this order: ---, +++, @@
 					std::string atMessage = GetLine(wOutput, atLine);
-					if (StartsWith(atMessage, "@@ -")) {
+					if (atMessage.starts_with("@@ -")) {
 						size_t atPos = 4; // deleted position starts right after "@@ -"
 						if (isAdd) {
 							const size_t linePlace = atMessage.find(" +", 7);
 							if (linePlace != std::string::npos)
 								atPos = linePlace + 2; // skip "@@ -1,1" and then " +"
 						}
-						sourceLine = IntegerFromText(atMessage.c_str() + atPos) - 1;
+						SA::Line contextLine = atLine + 1;
+						while (GetLine(wOutput, contextLine)[0] == ' ') {
+							contextLine++;
+						}
+						sourceLine = IntegerFromText(atMessage.c_str() + atPos) + contextLine - atLine - 2;
 					}
 				}
 
@@ -2146,7 +2164,7 @@ void SciTEBase::GoMessage(int dir) {
 					//simply move cursor to line, don't do any selection
 					SetSelection(startSourceLine, startSourceLine);
 				}
-				std::replace(message.begin(), message.end(), '\t', ' ');
+				std::ranges::replace(message, '\t', ' ');
 				::Remove(message, std::string("\n"));
 				props.Set("CurrentMessage", message);
 				UpdateStatusBar(false);

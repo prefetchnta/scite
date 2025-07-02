@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "WordList.h"
+#include "CharacterSet.h"
 
 using namespace Lexilla;
 
@@ -107,10 +108,15 @@ void WordList::Clear() noexcept {
 	len = 0;
 }
 
-bool WordList::Set(const char *s) {
+bool WordList::Set(const char *s, bool lowerCase) {
 	const size_t lenS = strlen(s) + 1;
 	std::unique_ptr<char[]> listTemp = std::make_unique<char[]>(lenS);
 	memcpy(listTemp.get(), s, lenS);
+	if (lowerCase) {
+		for (size_t i = 0; i < lenS; i++) {
+			listTemp[i] = MakeLowerCase(listTemp[i]);
+		}
+	}
 	size_t lenTemp = 0;
 	std::unique_ptr<char *[]> wordsTemp = ArrayFromWordList(listTemp.get(), lenS - 1, &lenTemp, onlyLineEnds);
 	std::sort(wordsTemp.get(), wordsTemp.get() + lenTemp, cmpWords);
@@ -185,8 +191,29 @@ bool WordList::InList(const char *s) const noexcept {
 
 /** convenience overload so can easily call with std::string.
  */
-bool WordList::InList(const std::string &s) const noexcept {
-	return InList(s.c_str());
+
+bool WordList::InList(std::string_view sv) const noexcept {
+	if (!words || sv.empty())
+		return false;
+	const char first = sv[0];
+	const unsigned char firstChar = first;
+	if (int j = starts[firstChar]; j >= 0) {
+		const std::string_view after = sv.substr(1);
+		for (; words[j][0] == first; j++) {
+			if (std::string_view(words[j] + 1) == after) {
+				return true;
+			}
+		}
+	}
+	if (int j = starts[static_cast<unsigned int>('^')]; j >= 0) {
+		for (; words[j][0] == '^';j++) {
+			// Use rfind with 0 position to act like C++20 starts_with for C++17
+			if (sv.rfind(words[j] + 1, 0) == 0) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 /** similar to InList, but word s can be a substring of keyword.

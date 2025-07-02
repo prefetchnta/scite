@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // A demonstration program
 #include <stdio.h>
 #if 0 /* */
@@ -22,6 +24,8 @@ b
 /** Unknown doc keywords so in SCE_C_COMMENTDOCKEYWORDERROR:
  @wrong LexCPP.cxx
  <wrong>filename</wrong>
+ Next line should not start a keyword but before 5.4.1 did and caused bad styling or a crash depending on range lexed
+ <
 **/
 
 #define M\
@@ -62,6 +66,11 @@ b
 // Active
 #endif
 
+#define ONE 1
+#if ONE != 1
+// Inactive
+#endif
+
 int main() {
 	double x[] = {3.14159,6.02e23,1.6e-19,1.0+1};
 	int y[] = {75,0113,0x4b};
@@ -70,6 +79,9 @@ int main() {
 	// JavaScript regular expression (14) tests
 	let a = /a/;
 	let b = /[a-z]+/gi;
+	/a|b/i.test("baby");
+	// arrow function
+	() => /a|b/i.test("baby");
 
 	// Escape sequence (27) tests
 	printf("\'\"\?\\\a\b\f\n\r\t\v \P");

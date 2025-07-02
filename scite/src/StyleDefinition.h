@@ -16,6 +16,7 @@ public:
 	std::string fore;
 	std::string back;
 	Scintilla::FontWeight weight;
+	Scintilla::FontStretch stretch;
 	bool italics;
 	bool eolfilled;
 	bool underlined;
@@ -25,12 +26,13 @@ public:
 	std::string invisibleRep;
 	enum flags { sdNone = 0, sdFont = 0x1, sdSize = 0x2, sdFore = 0x4, sdBack = 0x8,
 		     sdWeight = 0x10, sdItalics = 0x20, sdEOLFilled = 0x40, sdUnderlined = 0x80,
-		     sdCaseForce = 0x100, sdVisible = 0x200, sdChangeable = 0x400, sdInvisibleRep=0x800
+		     sdCaseForce = 0x100, sdVisible = 0x200, sdChangeable = 0x400, sdInvisibleRep=0x800,
+		     sdStretch = 0x10000,
 		   } specified;
 	explicit StyleDefinition(std::string_view definition);
 	bool ParseStyleDefinition(std::string_view definition);
-	Scintilla::Colour Fore() const;
-	Scintilla::Colour Back() const;
+	Scintilla::Colour Fore() const noexcept;
+	Scintilla::Colour Back() const noexcept;
 	int FractionalSize() const noexcept;
 	bool IsBold() const noexcept;
 };
@@ -45,8 +47,8 @@ constexpr Scintilla::ColourAlpha ColourRGBA(unsigned int red, unsigned int green
 
 int IntFromHexByte(std::string_view hexByte) noexcept;
 
-Scintilla::Colour ColourFromString(std::string_view s);
-Scintilla::ColourAlpha ColourAlphaFromString(std::string_view s);
+Scintilla::Colour ColourFromString(std::string_view s) noexcept;
+Scintilla::ColourAlpha ColourAlphaFromString(std::string_view s) noexcept;
 
 struct IndicatorDefinition {
 	Scintilla::IndicatorStyle style;
