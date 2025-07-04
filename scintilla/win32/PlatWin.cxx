@@ -220,7 +220,7 @@ constexpr BITMAPV5HEADER BitMapHeader(int width, int height) noexcept {
 	constexpr DWORD maskAlpha = 0xFF000000U;
 
 	BITMAPV5HEADER bi{};
-	bi.bV5Size = sizeof(BITMAPV5HEADER);
+	bi.bV5Size = sizeof(BITMAPINFOHEADER); /* FUCK */
 	bi.bV5Width = width;
 	bi.bV5Height = height;
 	bi.bV5Planes = 1;
