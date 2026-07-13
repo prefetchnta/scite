@@ -147,8 +147,8 @@ bool SciTEKeys::MatchKeyCode(long parsedKeyCode, int keyval, int modifiers) noex
 }
 
 HINSTANCE SciTEWin::hInstance {};
-const TCHAR *SciTEWin::className = nullptr;
-const TCHAR *SciTEWin::classNameInternal = nullptr;
+const WCHAR *SciTEWin::className = L"SciTEWindow";
+const WCHAR *SciTEWin::classNameInternal = L"SciTEWindowContent";
 SciTEWin *SciTEWin::app = nullptr;
 
 namespace {
@@ -257,7 +257,7 @@ SciTEWin::SciTEWin(Extension *ext) : SciTEBase(ext) {
 	hMM = {};
 	uniqueInstance.Init(this);
 
-	hAccTable = ::LoadAccelerators(hInstance, TEXT("ACCELS")); // md
+	hAccTable = ::LoadAcceleratorsW(hInstance, L"ACCELS"); // md
 
 	cmdWorker.pSciTE = this;
 }
@@ -290,14 +290,13 @@ uintptr_t SciTEWin::GetInstance() {
 }
 
 void SciTEWin::Register(HINSTANCE hInstance_) noexcept {
-	const TCHAR resourceName[] = TEXT("SciTE");
+	const WCHAR resourceName[] = L"SciTE";
 
 	hInstance = hInstance_;
 
 	WNDCLASS wndclass {};
 
 	// Register the frame window
-	className = TEXT("SciTEWindow");
 	wndclass.style = 0;
 	wndclass.lpfnWndProc = SciTEWin::TWndProc;
 	wndclass.cbClsExtra = 0;
@@ -308,15 +307,14 @@ void SciTEWin::Register(HINSTANCE hInstance_) noexcept {
 	wndclass.hbrBackground = {};
 	wndclass.lpszMenuName = resourceName;
 	wndclass.lpszClassName = className;
-	if (!::RegisterClass(&wndclass))
+	if (!::RegisterClassW(&wndclass))
 		exit(FALSE);
 
 	// Register the window that holds the two Scintilla edit windows and the separator
-	classNameInternal = TEXT("SciTEWindowContent");
 	wndclass.lpfnWndProc = BaseWin::StWndProc;
 	wndclass.lpszMenuName = nullptr;
 	wndclass.lpszClassName = classNameInternal;
-	if (!::RegisterClass(&wndclass))
+	if (!::RegisterClassW(&wndclass))
 		exit(FALSE);
 }
 
@@ -467,7 +465,7 @@ void SciTEWin::ReadEmbeddedProperties() {
 
 	propsEmbed.Clear();
 
-	HRSRC handProps = ::FindResource(hInstance, TEXT("Embedded"), TEXT("Properties"));
+	HRSRC handProps = ::FindResourceW(hInstance, L"Embedded", L"Properties");
 	if (handProps) {
 		const DWORD size = ::SizeofResource(hInstance, handProps);
 		HGLOBAL hmem = ::LoadResource(hInstance, handProps);
@@ -482,7 +480,7 @@ void SciTEWin::ReadEmbeddedProperties() {
 	}
 }
 
-SystemAppearance SciTEWin::WindowsAppearance() const noexcept {
+SystemAppearance SciTEWin::WindowsAppearance() noexcept {
 	SystemAppearance currentAppearance{};
 
 	HKEY hkeyPersonalize{};
@@ -609,7 +607,7 @@ struct XHH_AKLINK {
 // Help command lines contain topic!path
 void SciTEWin::ExecuteHelp(const char *cmd) {
 	if (!hHH)
-		hHH = ::LoadLibrary(TEXT("HHCTRL.OCX"));
+		hHH = ::LoadLibraryW(L"HHCTRL.OCX");
 
 	if (hHH) {
 		GUI::gui_string s = GUI::StringFromUTF8(cmd);
@@ -663,7 +661,7 @@ void SciTEWin::CopyPath() {
 	if (filePath.IsUntitled())
 		return;
 
-	const GUI::gui_string clipText(filePath.AsInternal());
+	const GUI::gui_string clipText(filePath.AsText());
 	const size_t blobSize = sizeof(GUI::gui_char)*(clipText.length()+1);
 	if (::OpenClipboard(MainHWND())) {
 		HGLOBAL hand = ::GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, blobSize);
@@ -681,8 +679,8 @@ void SciTEWin::CopyPath() {
 }
 
 void SciTEWin::FullScreenToggle() {
-	HWND wTaskBar = FindWindow(TEXT("Shell_TrayWnd"), TEXT(""));
-	HWND wStartButton = FindWindow(WC_BUTTONW, nullptr);
+	HWND wTaskBar = FindWindowW(L"Shell_TrayWnd", L"");
+	HWND wStartButton = FindWindowW(WC_BUTTONW, nullptr);
 	fullScreen = !fullScreen;
 	if (fullScreen) {
 		::SystemParametersInfo(SPI_GETWORKAREA, 0, &rcWorkArea, 0);
@@ -696,8 +694,6 @@ void SciTEWin::FullScreenToggle() {
 		int topStuff = ::GetSystemMetrics(SM_CYSIZEFRAME) + ::GetSystemMetrics(SM_CYCAPTION);
 		if (props.GetInt("full.screen.hides.menu"))
 			topStuff += ::GetSystemMetrics(SM_CYMENU);
-		::SetWindowLongPtr(HwndOf(wContent),
-				   GWL_EXSTYLE, 0);
 		::SetWindowPos(MainHWND(), HWND_TOP,
 			       -::GetSystemMetrics(SM_CXSIZEFRAME),
 			       -topStuff,
@@ -708,8 +704,6 @@ void SciTEWin::FullScreenToggle() {
 		::ShowWindow(wTaskBar, SW_SHOW);
 		if (wStartButton)
 			::ShowWindow(wStartButton, SW_SHOW);
-		::SetWindowLongPtr(HwndOf(wContent),
-				   GWL_EXSTYLE, WS_EX_CLIENTEDGE);
 		if (winPlace.length) {
 			::SystemParametersInfo(SPI_SETWORKAREA, 0, &rcWorkArea, 0);
 			if (winPlace.showCmd == SW_SHOWMAXIMIZED) {
@@ -1044,7 +1038,7 @@ DWORD SciTEWin::ExecuteOne(const Job &jobToRun) {
 			OutputAppendStringSynchronised("\n");
 		}
 
-		unsigned writingPosition = 0;
+		size_t writingPosition = 0;
 
 		int countPeeks = 0;
 		bool processDead = false;
@@ -1083,9 +1077,8 @@ DWORD SciTEWin::ExecuteOne(const Job &jobToRun) {
 				} else {
 					bytesToWrite = eolPos + 1 - writingPosition;
 				}
-				if (bytesToWrite > 250) {
-					bytesToWrite = 250;
-				}
+				constexpr size_t maxBytesWrite = 250;
+				bytesToWrite = std::min(bytesToWrite, maxBytesWrite);
 
 				DWORD bytesWrote = 0;
 
@@ -1094,7 +1087,8 @@ DWORD SciTEWin::ExecuteOne(const Job &jobToRun) {
 							      static_cast<DWORD>(bytesToWrite), &bytesWrote, nullptr);
 
 				if (bTest) {
-					if ((writingPosition + bytesToWrite) / 1024 > writingPosition / 1024) {
+					constexpr size_t oneK = 1024;
+					if ((writingPosition + bytesToWrite) / oneK > writingPosition / oneK) {
 						// sleep occasionally, even when writing
 						::Sleep(100L);
 					}
@@ -1467,7 +1461,7 @@ void SciTEWin::CreateUI() {
 		height = CW_USEDEFAULT;
 	}
 
-	if (props.GetInt("position.tile") && ::FindWindow(TEXT("SciTEWindow"), nullptr) &&
+	if (props.GetInt("position.tile") && ::FindWindowW(className, nullptr) &&
 			(left != static_cast<int>(CW_USEDEFAULT))) {
 		left += width;
 	}
@@ -1756,9 +1750,9 @@ bool SciTEWin::PreOpenCheck(const GUI::gui_string &file) {
 				fpDir = FilePath(GUI_TEXT("."));
 			FilePath fpName = fpArg.Name();
 			GUI::gui_string wildcard(GUI_TEXT("*"));
-			wildcard += fpName.AsInternal();
+			wildcard += fpName.AsText();
 			wildcard += GUI_TEXT("|*");
-			wildcard += fpName.AsInternal();
+			wildcard += fpName.AsText();
 
 			OpenDialog(fpDir, wildcard);
 		} else if (!fpArg.Extension().IsSet()) {
@@ -1769,7 +1763,7 @@ bool SciTEWin::PreOpenCheck(const GUI::gui_string &file) {
 				size_t start = 0;
 				while (start < extensions.length()) {
 					GUI::gui_string filterName = GUI::StringFromUTF8(extensions.c_str() + start);
-					GUI::gui_string nameWithExtension = fpArg.AsInternal();
+					GUI::gui_string nameWithExtension = fpArg.AsText();
 					nameWithExtension += filterName;
 					if (::GetFileAttributes(nameWithExtension.c_str()) != INVALID_FILE_ATTRIBUTES) {
 						isHandled = true;
@@ -1829,8 +1823,8 @@ void SciTEWin::MinimizeToTray() {
 	nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
 	nid.uCallbackMessage = SCITE_TRAY;
 	nid.hIcon = static_cast<HICON>(
-			    ::LoadImage(hInstance, TEXT("SCITE"), IMAGE_ICON, 16, 16, LR_DEFAULTSIZE));
-	StringCopy(nid.szTip, TEXT("SciTE"));
+			    ::LoadImageW(hInstance, L"SCITE", IMAGE_ICON, 16, 16, LR_DEFAULTSIZE));
+	StringCopy(nid.szTip, L"SciTE");
 	::ShowWindow(MainHWND(), SW_MINIMIZE);
 	if (::Shell_NotifyIcon(NIM_ADD, &nid)) {
 		::ShowWindow(MainHWND(), SW_HIDE);
@@ -1965,11 +1959,11 @@ void SciTEWin::AddToPopUp(const char *label, int cmd, bool enabled) {
 	GUI::gui_string localised = localiser.Text(label);
 	HMENU menu = static_cast<HMENU>(popup.GetID());
 	if (localised.empty())
-		::AppendMenu(menu, MF_SEPARATOR, 0, TEXT(""));
+		::AppendMenuW(menu, MF_SEPARATOR, 0, L"");
 	else if (enabled)
-		::AppendMenu(menu, MF_STRING, cmd, localised.c_str());
+		::AppendMenuW(menu, MF_STRING, cmd, localised.c_str());
 	else
-		::AppendMenu(menu, MF_STRING | MF_DISABLED | MF_GRAYED, cmd, localised.c_str());
+		::AppendMenuW(menu, MF_STRING | MF_DISABLED | MF_GRAYED, cmd, localised.c_str());
 }
 
 LRESULT SciTEWin::ContextMenuMessage(UINT iMessage, WPARAM wParam, LPARAM lParam) {
@@ -2013,7 +2007,7 @@ void SciTEWin::CheckForScintillaFailure(SA::Status statusFailure) noexcept {
 			swprintf(buff, std::size(buff), L"Scintilla failed with status %d.", static_cast<int>(statusFailure));
 		}
 		wcscat(buff, L" SciTE will now close.");
-		::MessageBox(MainHWND(), buff, TEXT("Failure in Scintilla"), MB_OK | MB_ICONERROR | MB_APPLMODAL);
+		::MessageBoxW(MainHWND(), buff, L"Failure in Scintilla", MB_OK | MB_ICONERROR | MB_APPLMODAL);
 		exit(FALSE);
 	}
 }
@@ -2066,7 +2060,7 @@ LRESULT SciTEWin::WndProc(UINT iMessage, WPARAM wParam, LPARAM lParam) {
 				if (file.Exists()) {
 					Open(file);
 				} else {
-					GUI::gui_string msg = LocaliseMessage("Could not open file '^0'.", file.AsInternal());
+					GUI::gui_string msg = LocaliseMessage("Could not open file '^0'.", file.AsText());
 					WindowMessageBox(wSciTE, msg);
 				}
 			}
@@ -2198,7 +2192,7 @@ LRESULT SciTEWin::WndProc(UINT iMessage, WPARAM wParam, LPARAM lParam) {
 	return 0;
 }
 
-LRESULT PASCAL SciTEWin::TWndProc(
+LRESULT CALLBACK SciTEWin::TWndProc(
 	HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam) {
 	if (iMessage == WM_CREATE) {
 		SciTEWin *scitePassed = static_cast<SciTEWin *>(SetWindowPointerFromCreate(hWnd, lParam));
@@ -2347,7 +2341,7 @@ void RestrictDLLPath() noexcept {
 	// That is where a bad DLL is placed in the current directory or in the PATH.
 	using SetDefaultDllDirectoriesSig = BOOL(WINAPI *)(DWORD DirectoryFlags);
 	using SetDllDirectorySig = BOOL(WINAPI *)(LPCTSTR lpPathName);
-	HMODULE kernel32 = ::GetModuleHandle(TEXT("kernel32.dll"));
+	HMODULE kernel32 = ::GetModuleHandleW(L"kernel32.dll");
 	if (kernel32) {
 		// SetDefaultDllDirectories is stronger, limiting search path to just the application and
 		// system directories but is only available on Windows 8+
@@ -2361,7 +2355,7 @@ void RestrictDLLPath() noexcept {
 				DLLFunction<SetDllDirectorySig>(kernel32, "SetDllDirectoryW");
 			if (SetDllDirectoryFn) {
 				// For security, remove current directory from the DLL search path
-				SetDllDirectoryFn(TEXT(""));
+				SetDllDirectoryFn(L"");
 			}
 		}
 	}
@@ -2369,16 +2363,12 @@ void RestrictDLLPath() noexcept {
 
 }
 
-#ifdef STATIC_BUILD
-extern "C" Scintilla::ILexer5 * __stdcall CreateLexer(const char *name);
-#endif
-
 #if defined(_MSC_VER) && defined(_PREFAST_)
 // Stop warning for WinMain. Microsoft headers have annotations and MinGW don't.
 #pragma warning(disable: 28251)
 #endif
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
 	RestrictDLLPath();
 
@@ -2404,9 +2394,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
 	HMODULE hmod = ::LoadLibrary(scintillaName);
 	if (!hmod) {
 		GUI::gui_string explanation = scintillaName;
-		explanation += TEXT(" could not be loaded.  SciTE will now close");
-		::MessageBox({}, explanation.c_str(),
-			     TEXT("Error loading Scintilla"), MB_OK | MB_ICONERROR);
+		explanation += L" could not be loaded.  SciTE will now close";
+		::MessageBoxW({}, explanation.c_str(),
+			     L"Error loading Scintilla", MB_OK | MB_ICONERROR);
 	}
 #endif
 
@@ -2440,11 +2430,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
 		} catch (const SA::Failure &sf) {
 			MainWind.CheckForScintillaFailure(sf.status);
 		} catch (const std::bad_alloc &) {
-			::MessageBox({}, TEXT("Allocation failure"), TEXT("Failure in SciTE"), MB_OK | MB_ICONERROR | MB_APPLMODAL);
+			::MessageBoxW({}, L"Allocation failure", L"Failure in SciTE", MB_OK | MB_ICONERROR | MB_APPLMODAL);
 		}
 		MainWind.Finalise();
 	} catch (std::bad_array_new_length &) {
-		::MessageBox({}, TEXT("Allocation failure"), TEXT("Failure to allocate SciTE at start up"), MB_OK | MB_ICONERROR | MB_APPLMODAL);
+		::MessageBoxW({}, L"Allocation failure", L"Failure to allocate SciTE at start up", MB_OK | MB_ICONERROR | MB_APPLMODAL);
 	}
 
 #ifdef STATIC_BUILD

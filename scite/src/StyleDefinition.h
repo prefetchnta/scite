@@ -31,10 +31,10 @@ public:
 		   } specified;
 	explicit StyleDefinition(std::string_view definition);
 	bool ParseStyleDefinition(std::string_view definition);
-	Scintilla::Colour Fore() const noexcept;
-	Scintilla::Colour Back() const noexcept;
-	int FractionalSize() const noexcept;
-	bool IsBold() const noexcept;
+	[[nodiscard]] Scintilla::Colour Fore() const noexcept;
+	[[nodiscard]] Scintilla::Colour Back() const noexcept;
+	[[nodiscard]] int FractionalSize() const noexcept;
+	[[nodiscard]] bool IsBold() const noexcept;
 };
 
 constexpr Scintilla::Colour ColourRGB(unsigned int red, unsigned int green, unsigned int blue) noexcept {
@@ -44,8 +44,6 @@ constexpr Scintilla::Colour ColourRGB(unsigned int red, unsigned int green, unsi
 constexpr Scintilla::ColourAlpha ColourRGBA(unsigned int red, unsigned int green, unsigned int blue, unsigned int alpha=0xff) noexcept {
 	return red | (green << 8) | (blue << 16) | (alpha << 24);
 }
-
-int IntFromHexByte(std::string_view hexByte) noexcept;
 
 Scintilla::Colour ColourFromString(std::string_view s) noexcept;
 Scintilla::ColourAlpha ColourAlphaFromString(std::string_view s) noexcept;

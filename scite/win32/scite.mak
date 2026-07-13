@@ -24,10 +24,11 @@ WIDEFLAGS=-DUNICODE -D_UNICODE
 
 LD=link
 
-CETCOMPAT=-CETCOMPAT
 !IFDEF ARM64
 ADD_DEFINE=-D_ARM64_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE=1
 SUBSYSTEM=-SUBSYSTEM:WINDOWS,10.00
+!ELSE
+CETCOMPAT=-CETCOMPAT
 !ENDIF
 
 CXXFLAGS=-Zi -TP -MP -W4 -EHsc -Zc:forScope -Zc:wchar_t -std:c++20 -D_CRT_SECURE_NO_DEPRECATE=1 -D_CRT_NONSTDC_NO_DEPRECATE $(WIDEFLAGS) $(ADD_DEFINE)
@@ -120,15 +121,16 @@ $(DIR_BIN)\conf.properties $(DIR_BIN)\cpp.properties \
 $(DIR_BIN)\csound.properties $(DIR_BIN)\css.properties $(DIR_BIN)\d.properties \
 $(DIR_BIN)\dataflex.properties $(DIR_BIN)\ecl.properties \
 $(DIR_BIN)\eiffel.properties $(DIR_BIN)\erlang.properties \
-$(DIR_BIN)\escript.properties $(DIR_BIN)\flagship.properties \
-$(DIR_BIN)\forth.properties $(DIR_BIN)\fortran.properties \
-$(DIR_BIN)\freebasic.properties $(DIR_BIN)\fsharp.properties \
-$(DIR_BIN)\gap.properties $(DIR_BIN)\haskell.properties \
-$(DIR_BIN)\hex.properties $(DIR_BIN)\hollywood.properties \
-$(DIR_BIN)\html.properties $(DIR_BIN)\inno.properties \
-$(DIR_BIN)\json.properties $(DIR_BIN)\kix.properties \
-$(DIR_BIN)\latex.properties $(DIR_BIN)\lisp.properties \
-$(DIR_BIN)\lot.properties $(DIR_BIN)\lout.properties $(DIR_BIN)\lua.properties \
+$(DIR_BIN)\escript.properties $(DIR_BIN)\escseq.properties \
+$(DIR_BIN)\flagship.properties $(DIR_BIN)\forth.properties \
+$(DIR_BIN)\fortran.properties $(DIR_BIN)\freebasic.properties \
+$(DIR_BIN)\fsharp.properties $(DIR_BIN)\gap.properties \
+$(DIR_BIN)\haskell.properties $(DIR_BIN)\hex.properties \
+$(DIR_BIN)\hollywood.properties $(DIR_BIN)\html.properties \
+$(DIR_BIN)\inno.properties $(DIR_BIN)\json.properties \
+$(DIR_BIN)\kix.properties $(DIR_BIN)\latex.properties \
+$(DIR_BIN)\lisp.properties $(DIR_BIN)\lot.properties \
+$(DIR_BIN)\lout.properties $(DIR_BIN)\lua.properties \
 $(DIR_BIN)\markdown.properties $(DIR_BIN)\matlab.properties \
 $(DIR_BIN)\maxima.properties $(DIR_BIN)\metapost.properties \
 $(DIR_BIN)\mmixal.properties $(DIR_BIN)\modula3.properties \

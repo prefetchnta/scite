@@ -7,13 +7,17 @@
 
 #include <cassert>
 
+#include <stdexcept>
+#include <utility>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <map>
 #include <optional>
 #include <algorithm>
+#include <iterator>
 
+#include <ios>
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -324,11 +328,11 @@ std::pair<std::string, std::string> MarkedAndFoldedDocument(const Scintilla::IDo
 
 std::vector<std::string> StringSplit(const std::string_view &text, int separator) {
 	std::vector<std::string> vs(text.empty() ? 0 : 1);
-	for (std::string_view::const_iterator it = text.begin(); it != text.end(); ++it) {
-		if (*it == separator) {
+	for (const char ch : text) {
+		if (ch == separator) {
 			vs.push_back(std::string());
 		} else {
-			vs.back() += *it;
+			vs.back() += ch;
 		}
 	}
 	return vs;
@@ -407,7 +411,7 @@ class PropertyMap {
 		return withVars;
 	}
 
-	std::vector<std::string> GetFilePatterns(const std::string &key) const {
+	static std::vector<std::string> GetFilePatterns(const std::string &key) {
 		std::vector<std::string> exts;
 		// Malformed patterns are skipped if we require the whole prefix here;
 		// a fuzzy search lets us collect and report them
@@ -950,13 +954,18 @@ bool AccessLexilla(std::filesystem::path basePath) {
 	}
 
 	bool success = true;
+	size_t count = 0;
 	for (auto &p : std::filesystem::recursive_directory_iterator(basePath)) {
 		if (p.is_directory()) {
 			//std::cout << p.path().string() << '\n';
+			++count;
 			if (!TestDirectory(p, basePath)) {
 				success = false;
 			}
 		}
+	}
+	if (count == 0) {
+		success = TestDirectory(basePath, basePath.parent_path());
 	}
 	return success;
 }
@@ -988,6 +997,31 @@ std::filesystem::path FindLexillaDirectory(std::filesystem::path startDirectory)
 	return std::filesystem::path();
 }
 
+struct LexerTestsDirectory {
+	std::filesystem::path path;
+	std::filesystem::path parent;
+	bool singleLexer;
+};
+
+bool AccessLexilla(std::filesystem::path basePath, const std::vector<LexerTestsDirectory> &directoryList) {
+	if (directoryList.empty()) {
+		return AccessLexilla(basePath);
+	}
+	bool success = true;
+	for (const LexerTestsDirectory &directory : directoryList) {
+		if (directory.singleLexer) {
+			if (!TestDirectory(directory.path, directory.parent)) {
+				success = false;
+			}
+		} else {
+			if (!AccessLexilla(directory.path)) {
+				success = false;
+			}
+		}
+	}
+	return success;
+}
+
 }
 
 
@@ -1004,12 +1038,24 @@ int main(int argc, char **argv) {
 		}
 #endif
 		std::filesystem::path examplesDirectory = baseDirectory / "test" / "examples";
+		std::vector<LexerTestsDirectory> directoryList;
 		for (int i = 1; i < argc; i++) {
-			if (argv[i][0] != '-') {
-				examplesDirectory = argv[i];
+			const std::string_view arg = argv[i];
+			if (!arg.starts_with('-')) {
+				std::filesystem::path path = arg;
+				if (std::filesystem::is_directory(path)) {
+					std::filesystem::path parent = path.parent_path();
+					const bool singleLexer = std::filesystem::equivalent(examplesDirectory, parent);
+					directoryList.push_back({path, parent, singleLexer});
+				} else {
+					path = examplesDirectory / path;
+					if (std::filesystem::is_directory(path)) {
+						directoryList.push_back({path, examplesDirectory, true});
+					}
+				}
 			}
 		}
-		success = AccessLexilla(examplesDirectory);
+		success = AccessLexilla(examplesDirectory, directoryList);
 	}
 	return success ? 0 : 1;
 }

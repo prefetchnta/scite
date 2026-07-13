@@ -16,6 +16,7 @@
 #include <vector>
 #include <set>
 #include <algorithm>
+#include <ranges>
 #include <functional>
 #include <chrono>
 
@@ -164,7 +165,7 @@ int IntFromString(std::u32string_view s) noexcept {
 	}
 	int value = 0;
 	while (!s.empty()) {
-		value = value * decimalBase + s.front() - '0';
+		value = (value * decimalBase) + s.front() - '0';
 		s.remove_prefix(1);
 	}
 	return negate ? -value : value;
@@ -205,7 +206,7 @@ int IntFromHexByte(std::string_view hexByte) noexcept {
 unsigned int IntFromHexBytes(std::string_view hexBytes) noexcept {
 	unsigned int val = 0;
 	while (!hexBytes.empty()) {
-		val = val * hexBase + IntFromHexDigit(hexBytes[0]);
+		val = (val * hexBase) + IntFromHexDigit(hexBytes[0]);
 		hexBytes.remove_prefix(1);
 	}
 	return val;
@@ -260,7 +261,7 @@ bool EqualCaseInsensitive(std::string_view a, std::string_view b) noexcept {
 }
 
 void LowerCaseAZ(std::string &s) {
-	std::transform(s.begin(), s.end(), s.begin(), MakeLowerCase);
+	std::ranges::transform(s, s.begin(), MakeLowerCase);
 }
 
 std::u32string UTF32FromUTF8(std::string_view s) {
@@ -346,6 +347,8 @@ std::string UTF8FromUTF32(unsigned int uch) {
 	return result;
 }
 
+// NOLINTBEGIN(*-magic-numbers)
+
 bool IsDBCSLeadByte(int codePage, char ch) noexcept {
 	// Byte ranges found in Wikipedia articles with relevant search strings in each case
 	const unsigned char uch = ch;
@@ -375,6 +378,8 @@ bool IsDBCSLeadByte(int codePage, char ch) noexcept {
 	}
 	return false;
 }
+
+// NOLINTEND(*-magic-numbers)
 
 /**
  * Convert a string into C string literal form using \a, \b, \f, \n, \r, \t, \v, and \ooo.
@@ -562,18 +567,16 @@ void ComboMemory::InsertDeletePrefix(std::string_view item) {
 	Insert(item);
 }
 
-bool ComboMemory::Present(const std::string_view sv) const noexcept {
-	for (const std::string &e : entries) {
-		if (e == sv) {
-			return true;
-		}
+void ComboMemory::Append(std::string_view item) {
+	const bool missing = std::ranges::find(entries, item) == entries.end();
+	if (missing && entries.size() < sz) {
+		entries.emplace_back(item);
 	}
-	return false;
 }
 
-void ComboMemory::Append(std::string_view item) {
-	if (!Present(item) && entries.size() < sz) {
-		entries.emplace_back(item);
+void ComboMemory::AppendList(const std::vector<std::string> &items) {
+	for (const std::string &item : items) {
+		Append(item);
 	}
 }
 

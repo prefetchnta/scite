@@ -40,6 +40,12 @@ mingw32-make test
 mingw32-make clean
 mingw32-make test
 @popd
+@pushd lexilla\test\Metadata
+mingw32-make clean
+mingw32-make
+Metadata -check
+python CheckMeta.py
+@popd
 @rem
 rem ************************************************************
 rem Target 3: Normal gcc build
@@ -155,7 +161,7 @@ pythonw performanceTests.py
 pythonw win32Tests.py
 @popd
 @pushd scite\win32
-mingw32-make CLANG=1 SANITIZE=undefined -j%THREADS%
+mingw32-make CLANG=1 "SANITIZE=" -j%THREADS%
 @if ERRORLEVEL 2 goto ERROR
 @popd
 @rem
@@ -180,9 +186,9 @@ nmake distclean
 rem ************************************************************
 rem Target 11: cppcheck
 @call scite\scripts\clearboth
-cppcheck -j %THREADS% --enable=all --suppressions-list=lexilla/cppcheck.suppress --max-configs=120 -I lexilla/include -I lexilla/access -I lexilla/lexlib -I scintilla/include --template=gcc --quiet lexilla
-cppcheck -j %THREADS% --enable=all --suppressions-list=scintilla/cppcheck.suppress --max-configs=100 -I scintilla/src -I scintilla/include -I scintilla/qt/ScintillaEditBase "-DSTDMETHODIMP_(type) type STDMETHODCALLTYPE" --template=gcc --quiet scintilla
-cppcheck -j %THREADS% --enable=all --suppressions-list=scite/cppcheck.suppress --max-configs=100 -I scite/src -I lexilla/include -I lexilla/access -I scintilla/include -I scite/lua/src -Ulua_assert -DINVALID_HANDLE_VALUE=((HANDLE)(LONG_PTR)-1) --template=gcc --quiet scite
+cppcheck -j %THREADS% --enable=all --suppressions-list=lexilla/cppcheck.suppress --max-configs=120 -I lexilla/include -I lexilla/access -I lexilla/lexlib -I scintilla/include -U__clang__ --template=gcc --quiet lexilla
+cppcheck -j %THREADS% --enable=all --suppressions-list=scintilla/cppcheck.suppress --max-configs=100 -I scintilla/src -I scintilla/include -I scintilla/qt/ScintillaEditBase -U__clang__ -UCURSES -UTK -UFOX -U__WX__ -U__HAIKU__ "-DQT_VERSION_CHECK(a,b,c)=((a<<16)|(b<<8)|(c))" "-DSTDMETHODIMP_(type)=type STDMETHODCALLTYPE" --template=gcc --quiet scintilla
+cppcheck -j %THREADS% --std=c++20 --enable=all --suppressions-list=scite/cppcheck.suppress --max-configs=100 -I scite/src -I lexilla/include -I lexilla/access -I scintilla/include -I scite/lua/src -Ulua_assert -DINVALID_HANDLE_VALUE=((HANDLE)(LONG_PTR)-1) --template=gcc --quiet scite
 @rem
 rem ************************************************************
 rem Target 12: header order check

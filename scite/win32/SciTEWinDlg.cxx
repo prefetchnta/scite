@@ -52,7 +52,7 @@ void PlayThisSound(
 	if (soundFreq == 0) {	// sound is probably a path
 		if (!hMM) {
 			// Load the DLL only if needed (may be slow on some systems)
-			hMM = ::LoadLibrary(TEXT("WINMM.DLL"));
+			hMM = ::LoadLibraryW(L"WINMM.DLL");
 		}
 
 		if (hMM) {
@@ -188,13 +188,13 @@ bool SciTEWin::ModelessHandler(MSG *pmsg) {
 }
 
 //  DoDialog is a bit like something in PC Magazine May 28, 1991, page 357
-int SciTEWin::DoDialog(const TCHAR *resName, DLGPROC lpProc) {
-	const int result = static_cast<int>(
-				   ::DialogBoxParam(hInstance, resName, MainHWND(), lpProc, reinterpret_cast<LPARAM>(this)));
+INT_PTR SciTEWin::DoDialog(const WCHAR *resName, DLGPROC lpProc) {
+	const INT_PTR result =
+				   ::DialogBoxParam(hInstance, resName, MainHWND(), lpProc, reinterpret_cast<LPARAM>(this));
 
 	if (result == -1) {
-		GUI::gui_string errorNum = GUI::StringFromInteger(::GetLastError());
-		GUI::gui_string msg = LocaliseMessage("Failed to create dialog box: ^0.", errorNum.c_str());
+		const GUI::gui_string errorNum = GUI::StringFromInteger(::GetLastError());
+		GUI::gui_string msg = LocaliseMessage("Failed to create dialog box: ^0.", errorNum);
 		::MessageBoxW(MainHWND(), msg.c_str(), appName, MB_OK | MB_SETFOREGROUND);
 	}
 
@@ -239,8 +239,8 @@ GUI::gui_string SciTEWin::DialogFilterFromProperty(const GUI::gui_string &filter
 void SciTEWin::CheckCommonDialogError() {
 	const DWORD errorNumber = ::CommDlgExtendedError();
 	if (errorNumber) {
-		GUI::gui_string sError = HexStringFromInteger(errorNumber);
-		GUI::gui_string msg = LocaliseMessage("Common dialog error 0x^0.", sError.c_str());
+		const GUI::gui_string sError = HexStringFromInteger(errorNumber);
+		GUI::gui_string msg = LocaliseMessage("Common dialog error 0x^0.", sError);
 		WindowMessageBox(wSciTE, msg);
 	}
 }
@@ -543,8 +543,8 @@ void SciTEWin::Print(
 		// from the Page Setup dialog to device units.
 		// (There are 2540 hundredths of a mm in an inch.)
 
-		TCHAR localeInfo[3];
-		GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IMEASURE, localeInfo, 3);
+		WCHAR localeInfo[3] {};
+		::GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_IMEASURE, localeInfo, 3);
 
 		if (localeInfo[0] == '0') {	// Metric system. '1' is US System
 			rectSetup.left = MulDiv(pagesetupMargin.left, ptDpi.x, 2540);
@@ -631,7 +631,7 @@ void SciTEWin::Print(
 		::DeleteDC(hdc);
 		DeleteFontObject(fontHeader);
 		DeleteFontObject(fontFooter);
-		GUI::gui_string msg = LocaliseMessage("Can not start printer document.");
+		const GUI::gui_string msg = LocaliseMessage("Can not start printer document.");
 		WindowMessageBox(wSciTE, msg, mbsOK);
 		return;
 	}
@@ -656,10 +656,10 @@ void SciTEWin::Print(
 	frPrint.rcPage.top = 0;
 	frPrint.rcPage.right = ptPage.x - rectPhysMargins.left - rectPhysMargins.right - 1;
 	frPrint.rcPage.bottom = ptPage.y - rectPhysMargins.top - rectPhysMargins.bottom - 1;
-	if (headerFormat.size()) {
+	if (!headerFormat.empty()) {
 		frPrint.rc.top += headerLineHeight + headerLineHeight / 2;
 	}
-	if (footerFormat.size()) {
+	if (!footerFormat.empty()) {
 		frPrint.rc.bottom -= footerLineHeight + footerLineHeight / 2;
 	}
 	// Print each page
@@ -678,7 +678,7 @@ void SciTEWin::Print(
 		if (printPage) {
 			::StartPage(hdc);
 
-			if (headerFormat.size()) {
+			if (!headerFormat.empty()) {
 				GUI::gui_string sHeader = GUI::StringFromUTF8(propsPrint.GetExpandedString("print.header.format"));
 				::SetTextColor(hdc, sdHeader.Fore());
 				::SetBkColor(hdc, sdHeader.Back());
@@ -707,7 +707,7 @@ void SciTEWin::Print(
 		lengthPrinted = wEditor.FormatRangeFull(printPage, &frPrint);
 
 		if (printPage) {
-			if (footerFormat.size()) {
+			if (!footerFormat.empty()) {
 				GUI::gui_string sFooter = GUI::StringFromUTF8(propsPrint.GetExpandedString("print.footer.format"));
 				::SetTextColor(hdc, sdFooter.Fore());
 				::SetBkColor(hdc, sdFooter.Back());
@@ -893,8 +893,12 @@ void SciTEWin::UserStripClosed() {
 }
 
 void SciTEWin::ShowBackgroundProgress(const GUI::gui_string &explanation, size_t size, size_t progress) {
+	const bool backgroundWasVisible = backgroundStrip.visible;
 	backgroundStrip.visible = !explanation.empty();
-	SizeSubWindows();
+	if (backgroundWasVisible != backgroundStrip.visible) {
+		// Changed visibility so resize.
+		SizeSubWindows();
+	}
 	if (backgroundStrip.visible)
 		backgroundStrip.SetProgress(explanation, size, progress);
 }
@@ -1278,7 +1282,7 @@ BOOL SciTEWin::GrepMessage(HWND hDlg, UINT message, WPARAM wParam) {
 
 		} else if (ControlIDOfWParam(wParam) == IDOK) {
 			if (jobQueue.IsExecuting()) {
-				GUI::gui_string msgBuf = LocaliseMessage("Job is currently executing. Wait until it finishes.");
+				const GUI::gui_string msgBuf = LocaliseMessage("Job is currently executing. Wait until it finishes.");
 				WindowMessageBox(wFindInFiles, msgBuf);
 				return FALSE;
 			}
@@ -1313,7 +1317,7 @@ BOOL SciTEWin::GrepMessage(HWND hDlg, UINT message, WPARAM wParam) {
 		} else if (ControlIDOfWParam(wParam) == IDDOTDOT) {
 			FilePath directory(dlg.ItemTextG(IDDIRECTORY));
 			directory = directory.Directory();
-			dlg.SetItemText(IDDIRECTORY, directory.AsInternal());
+			dlg.SetItemText(IDDIRECTORY, directory.AsText());
 
 		} else if (ControlIDOfWParam(wParam) == IDBROWSE) {
 
@@ -1331,8 +1335,8 @@ BOOL SciTEWin::GrepMessage(HWND hDlg, UINT message, WPARAM wParam) {
 				BROWSEINFO info {};
 				info.hwndOwner = hDlg;
 				info.pidlRoot = nullptr;
-				TCHAR szDisplayName[MAX_PATH] = TEXT("");
-				info.pszDisplayName = szDisplayName;
+				WCHAR wszDisplayName[MAX_PATH] = L"";
+				info.pszDisplayName = wszDisplayName;
 				GUI::gui_string title = localiser.Text("Select a folder to search from");
 				info.lpszTitle = title.c_str();
 				info.ulFlags = 0;
@@ -1351,10 +1355,10 @@ BOOL SciTEWin::GrepMessage(HWND hDlg, UINT message, WPARAM wParam) {
 				if (pidl) {
 					// Try to convert the pidl to a display string.
 					// Return is true if success.
-					TCHAR szDir[MAX_PATH];
-					if (::SHGetPathFromIDList(pidl, szDir)) {
+					WCHAR wszDir[MAX_PATH];
+					if (::SHGetPathFromIDList(pidl, wszDir)) {
 						// Set edit control to the directory path.
-						dlg.SetItemText(IDDIRECTORY, szDir);
+						dlg.SetItemText(IDDIRECTORY, wszDir);
 					}
 					pShellMalloc->Free(pidl);
 				}
@@ -1387,7 +1391,7 @@ void SciTEWin::FindInFiles() {
 	} else {
 		props.SetPath("find.directory", filePath.Directory());
 	}
-	wFindInFiles = CreateParameterisedDialog(TEXT("Grep"), GrepDlg);
+	wFindInFiles = CreateParameterisedDialog(L"Grep", GrepDlg);
 	wFindInFiles.Show();
 }
 
@@ -1506,7 +1510,7 @@ INT_PTR CALLBACK SciTEWin::GoLineDlg(HWND hDlg, UINT message, WPARAM wParam, LPA
 }
 
 void SciTEWin::GoLineDialog() {
-	DoDialog(TEXT("GoLine"), GoLineDlg);
+	DoDialog(L"GoLine", GoLineDlg);
 }
 
 BOOL SciTEWin::AbbrevMessage(HWND hDlg, UINT message, WPARAM wParam) {
@@ -1543,7 +1547,7 @@ INT_PTR CALLBACK SciTEWin::AbbrevDlg(HWND hDlg, UINT message, WPARAM wParam, LPA
 }
 
 void SciTEWin::AbbrevDialog() {
-	DoDialog(TEXT("InsAbbrev"), AbbrevDlg);
+	DoDialog(L"InsAbbrev", AbbrevDlg);
 }
 
 BOOL SciTEWin::TabSizeMessage(HWND hDlg, UINT message, WPARAM wParam) {
@@ -1604,7 +1608,7 @@ INT_PTR CALLBACK SciTEWin::TabSizeDlg(HWND hDlg, UINT message, WPARAM wParam, LP
 }
 
 void SciTEWin::TabSizeDialog() {
-	DoDialog(TEXT("TabSize"), TabSizeDlg);
+	DoDialog(L"TabSize", TabSizeDlg);
 }
 
 bool SciTEWin::ParametersOpen() {
@@ -1683,10 +1687,10 @@ bool SciTEWin::ParametersDialog(bool modal) {
 	bool success = false;
 	modalParameters = modal;
 	if (modal) {
-		success = DoDialog(TEXT("PARAMETERS"), ParametersDlg) == IDOK;
+		success = DoDialog(L"PARAMETERS", ParametersDlg) == IDOK;
 		wParameters = nullptr;
 	} else {
-		CreateParameterisedDialog(TEXT("PARAMETERSNONMODAL"), ParametersDlg);
+		CreateParameterisedDialog(L"PARAMETERSNONMODAL", ParametersDlg);
 		wParameters.Show();
 	}
 
@@ -1712,14 +1716,14 @@ SciTEBase::MessageBoxChoice SciTEWin::WindowMessageBox(GUI::Window &w, const GUI
 }
 
 void SciTEWin::FindMessageBox(const std::string &msg, const std::string *findItem) {
+	GUI::gui_string msgBuf;
 	if (!findItem) {
-		GUI::gui_string msgBuf = LocaliseMessage(msg.c_str());
-		WindowMessageBox(wFindReplace.Created() ? wFindReplace : wSciTE, msgBuf);
+		msgBuf = LocaliseMessage(msg);
 	} else {
-		GUI::gui_string findThing = GUI::StringFromUTF8(*findItem);
-		GUI::gui_string msgBuf = LocaliseMessage(msg.c_str(), findThing.c_str());
-		WindowMessageBox(wFindReplace.Created() ? wFindReplace : wSciTE, msgBuf);
+		const GUI::gui_string findThing = GUI::StringFromUTF8(*findItem);
+		msgBuf = LocaliseMessage(msg, findThing);
 	}
+	WindowMessageBox(wFindReplace.Created() ? wFindReplace : wSciTE, msgBuf);
 }
 
 LRESULT CALLBACK CreditsWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -1770,5 +1774,5 @@ INT_PTR CALLBACK SciTEWin::AboutDlg(HWND hDlg, UINT message, WPARAM wParam, LPAR
 
 void SciTEWin::AboutDialogWithBuild(int staticBuild_) {
 	staticBuild = staticBuild_;
-	DoDialog(TEXT("About"), AboutDlg);
+	DoDialog(L"About", AboutDlg);
 }

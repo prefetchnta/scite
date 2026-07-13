@@ -13,6 +13,7 @@
 #include <cstdarg>
 #include <ctime>
 
+#include <utility>
 #include <compare>
 #include <tuple>
 #include <string>
@@ -20,6 +21,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <optional>
 #include <algorithm>
 #include <memory>
 #include <chrono>

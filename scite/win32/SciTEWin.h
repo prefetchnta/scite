@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdarg>
 
+#include <new>
 #include <compare>
 #include <tuple>
 #include <string>
@@ -27,10 +28,12 @@
 #include <optional>
 #include <initializer_list>
 #include <algorithm>
+#include <ranges>
 #include <iterator>
 #include <memory>
 #include <numeric>
 #include <chrono>
+#include <ios>
 #include <sstream>
 #include <iomanip>
 #include <atomic>
@@ -68,14 +71,12 @@ typedef void *HTHEME;
 // need this header for SHBrowseForFolder
 #include <shlobj.h>
 
-#include "ILoader.h"
-#include "ILexer.h"
-
 #include "ScintillaTypes.h"
 #include "ScintillaMessages.h"
 #include "ScintillaCall.h"
 #include "ScintillaStructures.h"
-
+#include "ILoader.h"
+#include "ILexer.h"
 #include "Scintilla.h"
 #include "Lexilla.h"
 #include "LexillaAccess.h"
@@ -135,11 +136,10 @@ public:
 class Dialog;
 
 class ContentWin : public BaseWin {
-	SciTEWin *pSciTEWin;
-	bool capturedMouse;
+	SciTEWin *pSciTEWin = nullptr;
+	bool capturedMouse = false;
 public:
-	ContentWin() noexcept : pSciTEWin(nullptr), capturedMouse(false) {
-	}
+	ContentWin() noexcept = default;
 	void SetSciTE(SciTEWin *pSciTEWin_) noexcept {
 		pSciTEWin = pSciTEWin_;
 	}
@@ -175,8 +175,8 @@ protected:
 	bool flatterUI;
 	int cmdShow;
 	static HINSTANCE hInstance;
-	static const TCHAR *className;
-	static const TCHAR *classNameInternal;
+	static const WCHAR *className;
+	static const WCHAR *classNameInternal;
 	static SciTEWin *app;
 	WINDOWPLACEMENT winPlace;
 	RECT rcWorkArea;
@@ -231,14 +231,14 @@ protected:
 
 	void ReadLocalization() override;
 	void GetWindowPosition(int *left, int *top, int *width, int *height, int *maximize) override;
-	int GetScaleFactor() noexcept;
+	static int GetScaleFactor() noexcept;
 	bool SetScaleFactor(int scale);
 
 	void ReadEmbeddedProperties() override;
 	void ReadPropertiesInitial() override;
 	void ReadProperties() override;
 
-	SystemAppearance WindowsAppearance() const noexcept;
+	static SystemAppearance WindowsAppearance() noexcept;
 	SystemAppearance CurrentAppearance() const noexcept override;
 
 	void TimerStart(int mask) override;
@@ -249,7 +249,7 @@ protected:
 	void SizeSubWindows() override;
 
 	void SetMenuItem(int menuNumber, int position, int itemID,
-			 const GUI::gui_char *text, const GUI::gui_char *mnemonic = 0) override;
+			 const GUI::gui_char *text, const GUI::gui_char *mnemonic = nullptr) override;
 	void RedrawMenu() override;
 	void DestroyMenuItem(int menuNumber, int itemID) override;
 	void CheckAMenuItem(int wIDCheckItem, bool val) override;
@@ -261,7 +261,7 @@ protected:
 	void LocaliseControl(HWND w);
 	void LocaliseDialog(HWND wDialog);
 
-	int DoDialog(const TCHAR *resName, DLGPROC lpProc);
+	INT_PTR DoDialog(const WCHAR *resName, DLGPROC lpProc);
 	HWND CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc) noexcept;
 	GUI::gui_string DialogFilterFromProperty(const GUI::gui_string &filterProperty);
 	void CheckCommonDialogError();
@@ -288,7 +288,7 @@ protected:
 	BOOL HandleReplaceCommand(int cmd, bool reverseDirection = false);
 
 	MessageBoxChoice WindowMessageBox(GUI::Window &w, const GUI::gui_string &msg, MessageBoxStyle style = mbsIconWarning) override;
-	void FindMessageBox(const std::string &msg, const std::string *findItem = 0) override;
+	void FindMessageBox(const std::string &msg, const std::string *findItem = nullptr) override;
 	void AboutDialog() override;
 	void DropFiles(HDROP hdrop);
 	void MinimizeToTray();
@@ -380,7 +380,7 @@ protected:
 
 public:
 
-	explicit SciTEWin(Extension *ext = 0);
+	explicit SciTEWin(Extension *ext = nullptr);
 
 	// Deleted so SciTEWin objects can not be copied.
 	SciTEWin(const SciTEWin &) = delete;
@@ -425,7 +425,7 @@ public:
 
 	uintptr_t GetInstance() override;
 	static void Register(HINSTANCE hInstance_) noexcept;
-	static LRESULT PASCAL TWndProc(
+	static LRESULT CALLBACK TWndProc(
 		HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam);
 
 	friend class UniqueInstance;
@@ -446,7 +446,8 @@ constexpr GUI::Point PointFromLong(LPARAM lPoint) noexcept {
 }
 
 constexpr int ControlIDOfWParam(WPARAM wParam) noexcept {
-	return wParam & 0xffff;
+	constexpr WPARAM lowMask = 0xffff;
+	return wParam & lowMask;
 }
 
 inline HWND HwndOf(const GUI::Window &w) noexcept {

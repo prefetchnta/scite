@@ -3391,6 +3391,14 @@ Position ScintillaCall::IndexPositionFromLine(Line line, Scintilla::LineCharacte
 	return Call(Message::IndexPositionFromLine, line, static_cast<intptr_t>(lineCharacterIndex));
 }
 
+bool ScintillaCall::DragDropEnabled() {
+	return Call(Message::GetDragDropEnabled);
+}
+
+void ScintillaCall::SetDragDropEnabled(bool dragDropEnabled) {
+	Call(Message::SetDragDropEnabled, dragDropEnabled);
+}
+
 void ScintillaCall::StartRecord() {
 	Call(Message::StartRecord);
 }
@@ -3549,6 +3557,14 @@ std::string ScintillaCall::DescriptionOfStyle(int style) {
 
 void ScintillaCall::SetILexer(void *ilexer) {
 	CallPointer(Message::SetILexer, 0, ilexer);
+}
+
+void ScintillaCall::SetScaleTechnique(Scintilla::ScaleTechnique technique) {
+	Call(Message::SetScaleTechnique, static_cast<uintptr_t>(technique));
+}
+
+ScaleTechnique ScintillaCall::ScaleTechnique() {
+	return static_cast<Scintilla::ScaleTechnique>(Call(Message::GetScaleTechnique));
 }
 
 Bidirectional ScintillaCall::Bidirectional() {

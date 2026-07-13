@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <ctime>
 
+#include <exception>
 #include <compare>
 #include <tuple>
 #include <string>
@@ -29,11 +30,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include "ILexer.h"
-
 #include "ScintillaTypes.h"
 #include "ScintillaCall.h"
-
+#include "ILexer.h"
 #include "GUI.h"
 #include "ScintillaWindow.h"
 
@@ -326,7 +325,7 @@ void SciTEBase::SaveToPDF(const FilePath &saveName) {
 			const double glyphWidth = fontToPoints(PDFfontWidths[fontSet]);
 			xPos += glyphWidth;
 			// if cannot fit into a line, flush, wrap to next line
-			if (xPos > pageWidth - pageMargin.right) {
+			if (xPos > static_cast<double>(pageWidth - pageMargin.right)) {
 				nextLine();
 				xPos += glyphWidth;
 			}
@@ -365,7 +364,7 @@ void SciTEBase::SaveToPDF(const FilePath &saveName) {
 			firstLine = true;
 			pageCount++;
 			const double fontAscender = fontToPoints(PDFfontAscenders[fontSet]);
-			yPos = pageHeight - pageMargin.top - fontAscender;
+			yPos = static_cast<double>(pageHeight - pageMargin.top) - fontAscender;
 			// start a new page
 			snprintf(buffer, std::size(buffer), "BT 1 0 0 1 %d %d Tm\n",
 				pageMargin.left, (int)yPos);

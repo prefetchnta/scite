@@ -12,6 +12,7 @@
 #include <cmath>
 
 #include <stdexcept>
+#include <utility>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -64,20 +65,7 @@ void BidiData::Resize(size_t maxLineLength_) {
 }
 
 LineLayout::LineLayout(Sci::Line lineNumber_, int maxLineLength_) :
-	lenLineStarts(0),
-	lineNumber(lineNumber_),
-	maxLineLength(-1),
-	numCharsInLine(0),
-	numCharsBeforeEOL(0),
-	validity(ValidLevel::invalid),
-	xHighlightGuide(0),
-	highlightColumn(false),
-	containsCaret(false),
-	edgeColumn(0),
-	bracePreviousStyles{},
-	widthLine(wrapWidthInfinite),
-	lines(1),
-	wrapIndent(0) {
+	lineNumber(lineNumber_) {
 	Resize(maxLineLength_);
 }
 
@@ -167,22 +155,20 @@ bool LineLayout::InLine(int offset, int line) const noexcept {
 }
 
 int LineLayout::SubLineFromPosition(int posInLine, PointEnd pe) const noexcept {
-	if (!lineStarts || (posInLine > maxLineLength)) {
+	if (lines <= 1 || (posInLine >= numCharsBeforeEOL)) {
 		return lines - 1;
 	}
 
-	for (int line = 0; line < lines; line++) {
-		if (FlagSet(pe, PointEnd::subLineEnd)) {
-			// Return subline not start of next
-			if (lineStarts[line + 1] <= posInLine + 1)
-				return line;
-		} else {
-			if (lineStarts[line + 1] <= posInLine)
-				return line;
+	// Return subline not start of next for PointEnd::subLineEnd
+	posInLine -= FlagSet(pe, PointEnd::subLineEnd) ? 1 : 0;
+	int line = 1;
+	for (; line < lines; line++) {
+		if (lineStarts[line] > posInLine) {
+			break;
 		}
 	}
 
-	return lines - 1;
+	return line - 1;
 }
 
 void LineLayout::AddLineStart(Sci::Position start) {
@@ -272,11 +258,6 @@ int LineLayout::FindPositionFromX(XYPOSITION x, Range range, bool charPosition) 
 
 Point LineLayout::PointFromPosition(int posInLine, int lineHeight, PointEnd pe) const noexcept {
 	Point pt;
-	// In case of very long line put x at arbitrary large position
-	if (posInLine > maxLineLength) {
-		pt.x = positions[maxLineLength] - positions[LineStart(lines)];
-	}
-
 	for (int subLine = 0; subLine < lines; subLine++) {
 		const Range rangeSubLine = SubLineRange(subLine, Scope::visibleOnly);
 		if (posInLine >= rangeSubLine.start) {
@@ -317,7 +298,11 @@ Interval LineLayout::SpanByte(int index) const noexcept {
 }
 
 int LineLayout::EndLineStyle() const noexcept {
-	return styles[numCharsBeforeEOL > 0 ? numCharsBeforeEOL-1 : 0];
+	return styles[std::max(numCharsBeforeEOL - 1, 0)];
+}
+
+int LineLayout::LastStyle() const noexcept {
+	return styles[numCharsInLine];
 }
 
 void LineLayout::WrapLine(const Document *pdoc, Sci::Position posLineStart, Wrap wrapState, XYPOSITION wrapWidth) {
@@ -615,7 +600,7 @@ std::shared_ptr<LineLayout> LineLayoutCache::Retrieve(Sci::Line lineNumber, Sci:
 
 	if (pos < cache.size()) {
 		if (cache[pos] && !cache[pos]->CanHold(lineNumber, maxChars)) {
-			cache[pos].reset();
+			cache[pos]->ReSet(lineNumber, maxChars);
 		}
 		if (!cache[pos]) {
 			cache[pos] = std::make_shared<LineLayout>(lineNumber, maxChars);
@@ -998,14 +983,13 @@ public:
 };
 
 class PositionCache : public IPositionCache {
-	static constexpr size_t defaultCacheSize = 0x400;
-	std::vector<PositionCacheEntry> pces{ defaultCacheSize };
+	std::vector<PositionCacheEntry> pces{ positionCacheDefaultSize };
 	std::mutex mutex;
 	uint16_t clock = 1;
 	bool allClear = true;
 public:
 	PositionCache();
-	// Deleted so LineAnnotation objects can not be copied.
+	// Deleted so PositionCache objects can not be copied.
 	PositionCache(const PositionCache &) = delete;
 	PositionCache(PositionCache &&) = delete;
 	void operator=(const PositionCache &) = delete;

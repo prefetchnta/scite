@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <ctime>
 
+#include <utility>
 #include <compare>
 #include <tuple>
 #include <string>
@@ -22,16 +23,16 @@
 #include <set>
 #include <optional>
 #include <algorithm>
+#include <ranges>
+#include <iterator>
 #include <memory>
 #include <chrono>
 #include <atomic>
 #include <mutex>
 
-#include "ILoader.h"
-
 #include "ScintillaTypes.h"
 #include "ScintillaCall.h"
-
+#include "ILoader.h"
 #include "SciLexer.h"
 
 #include "GUI.h"
@@ -67,7 +68,7 @@ void BufferDocReleaser::operator()(SA::IDocumentEditable *pDoc) noexcept {
 }
 
 Buffer::Buffer() :
-	file(), isDirty(false), isReadOnly(false), failedSave(false), useMonoFont(false), lifeState(LifeState::empty),
+	isDirty(false), isReadOnly(false), failedSave(false), useMonoFont(false), lifeState(LifeState::empty),
 	unicodeMode(UniMode::uni8Bit), fileModTime(0), fileModLastAsk(0), documentModTime(0),
 	findMarks(FindMarks::none), futureDo(FutureDo::none) {}
 
@@ -91,7 +92,7 @@ void Buffer::Init() {
 	doc.reset();
 }
 
-void Buffer::SetTimeFromFile() {
+void Buffer::SetTimeFromFile() noexcept {
 	fileModTime = file.ModifiedTime();
 	fileModLastAsk = fileModTime;
 	documentModTime = fileModTime;
@@ -100,6 +101,14 @@ void Buffer::SetTimeFromFile() {
 
 void Buffer::DocumentModified() noexcept {
 	documentModTime = time(nullptr);
+}
+
+void Buffer::WantReload() noexcept {
+	if (fileModTime) {
+		// Signal that the file should be reloaded by decreasing its modification time so file on
+		// disk appears newer. Only do this for a valid modification time.
+		fileModTime--;
+	}
 }
 
 bool Buffer::NeedsSave(int delayBeforeSave) const  noexcept {
@@ -114,14 +123,14 @@ void Buffer::CompleteLoading() noexcept {
 	}
 }
 
-void Buffer::CompleteStoring() {
+void Buffer::CompleteStoring() noexcept {
 	if (pFileWorker && !pFileWorker->IsLoading()) {
 		pFileWorker.reset();
 	}
 	SetTimeFromFile();
 }
 
-void Buffer::AbandonAutomaticSave() {
+void Buffer::AbandonAutomaticSave() noexcept {
 	if (pFileWorker && !pFileWorker->IsLoading()) {
 		const FileStorer *pFileStorer = dynamic_cast<FileStorer *>(pFileWorker.get());
 		if (pFileStorer && !pFileStorer->visibleProgress) {
@@ -158,11 +167,11 @@ bool Buffer::FinishSave() noexcept {
 	if ((futureDo & FutureDo::finishSave) != FutureDo::finishSave) {
 		return false;
 	}
-	futureDo = futureDo & ~(FutureDo::finishSave);
+	futureDo = futureDo & ~FutureDo::finishSave;
 	return true;
 }
 
-void Buffer::CancelLoad() {
+void Buffer::CancelLoad() noexcept {
 	// Complete any background loading
 	if (pFileWorker && pFileWorker->IsLoading()) {
 		pFileWorker->Cancel();
@@ -275,7 +284,7 @@ void BufferList::SetCurrent(BufferIndex index) noexcept {
 	current = index;
 }
 
-void BufferList::PopStack() {
+void BufferList::PopStack() noexcept {
 	for (BufferIndex i = 0; i < length - 1; ++i) {
 		BufferIndex index = stack[i + 1];
 		// adjust the index for items that will move in buffers[]
@@ -316,7 +325,7 @@ void BufferList::CommitStackSelection() {
 	stackcurrent = 0;
 }
 
-void BufferList::ShiftTo(BufferIndex indexFrom, BufferIndex indexTo) {
+void BufferList::ShiftTo(BufferIndex indexFrom, BufferIndex indexTo) noexcept {
 	// shift buffer to new place in buffers array
 	if (indexFrom == indexTo ||
 			indexFrom < 0 || indexFrom >= length ||
@@ -373,7 +382,7 @@ BackgroundActivities BufferList::CountBackgroundActivities() const {
 					bg.loaders++;
 				else
 					bg.storers++;
-				bg.fileNameLast = buffers[i].file.AsInternal();
+				bg.fileNameLast = buffers[i].file.AsText();
 				bg.totalWork += buffers[i].pFileWorker->SizeJob();
 				bg.totalProgress += buffers[i].pFileWorker->ProgressMade();
 			}
@@ -568,13 +577,7 @@ void SciTEBase::ClearDocument() {
 }
 
 void SciTEBase::CreateBuffers() {
-	int buffersWanted = props.GetInt("buffers");
-	if (buffersWanted > bufferMax) {
-		buffersWanted = bufferMax;
-	}
-	if (buffersWanted < 1) {
-		buffersWanted = 1;
-	}
+	const BufferIndex buffersWanted = std::clamp(props.GetInt("buffers"), 1, bufferMax);
 	buffers.Allocate(buffersWanted);
 }
 
@@ -614,6 +617,18 @@ std::string IndexPropKey(const char *bufPrefix, BufferIndex bufIndex, const char
 	return pKey;
 }
 
+std::vector<std::string> GetIndexedProps(const PropSetFile &propsSession, const char *prefix, const char *appendix) {
+	std::vector<std::string> result;
+	for (int i = 0;; i++) {
+		const std::string propKey = IndexPropKey(prefix, i, appendix);
+		const std::string_view propStr = propsSession.Get(propKey);
+		if (propStr.empty())
+			break;
+		result.emplace_back(propStr);
+	}
+	return result;
+}
+
 }
 
 void SciTEBase::LoadSessionFile(const GUI::gui_char *sessionName) {
@@ -640,7 +655,7 @@ void SciTEBase::RestoreRecentMenu() {
 	for (int i = 0; i < fileStackMax; i++) {
 		std::string propKey = IndexPropKey("mru", i, "path");
 		std::string propStr = propsSession.GetString(propKey);
-		if (propStr == "")
+		if (propStr.empty())
 			continue;
 		AddFileToStack(RecentFile(GUI::StringFromUTF8(propStr), fp));
 	}
@@ -690,21 +705,8 @@ void SciTEBase::RestoreFromSession(const Session &session) {
 
 void SciTEBase::RestoreSession() {
 	if (props.GetInt("save.find") != 0) {
-		for (int i = 0;; i++) {
-			const std::string propKey = IndexPropKey("search", i, "findwhat");
-			const std::string_view propStr = propsSession.Get(propKey);
-			if (propStr == "")
-				break;
-			memFinds.Append(propStr);
-		}
-
-		for (int i = 0;; i++) {
-			const std::string propKey = IndexPropKey("search", i, "replacewith");
-			const std::string_view propStr = propsSession.Get(propKey);
-			if (propStr == "")
-				break;
-			memReplaces.Append(propStr);
-		}
+		memFinds.AppendList(GetIndexedProps(propsSession, "search", "findwhat"));
+		memReplaces.AppendList(GetIndexedProps(propsSession, "search", "replacewith"));
 	}
 
 	// Comment next line if you don't want to close all buffers before restoring session
@@ -712,10 +714,10 @@ void SciTEBase::RestoreSession() {
 
 	Session session;
 
-	for (int i = 0; i < bufferMax; i++) {
+	for (BufferIndex i = 0; i < bufferMax; i++) {
 		std::string propKey = IndexPropKey("buffer", i, "path");
 		std::string propStr = propsSession.GetString(propKey);
-		if (propStr == "")
+		if (propStr.empty())
 			continue;
 
 		BufferState bufferState;
@@ -737,6 +739,11 @@ void SciTEBase::RestoreSession() {
 			propKey = IndexPropKey("buffer", i, "bookmarks");
 			propStr = propsSession.GetString(propKey);
 			bufferState.bookmarks = LinesFromString(propStr);
+		}
+
+		if (props.GetInt("session.readonly")) {
+			propKey = IndexPropKey("buffer", i, "readonly");
+			bufferState.readOnly = (propsSession.GetInt(propKey) == 1);
 		}
 
 		if (props.GetInt("fold") && !props.GetInt("fold.on.open") &&
@@ -847,6 +854,12 @@ void SciTEBase::SaveSessionFile(const GUI::gui_char *sessionName) {
 						propKey = IndexPropKey("buffer", i, "bookmarks");
 						fprintf(sessionFile, "%s=%s\n", propKey.c_str(), bmString.c_str());
 					}
+				}
+
+				if (props.GetInt("session.readonly")) {
+					const std::string roString = buff.isReadOnly ? "1" : "0";
+					propKey = IndexPropKey("buffer", i, "readonly");
+					fprintf(sessionFile, "%s=%s\n", propKey.c_str(), roString.c_str());
 				}
 
 				if (props.GetInt("fold") && props.GetInt("session.folds")) {
@@ -1179,7 +1192,7 @@ void SciTEBase::EndStackedTabbing() {
 
 void SciTEBase::UpdateTabs(const std::vector<GUI::gui_string> &tabNames) {
 	RemoveAllTabs();
-	for (int t = 0; t < static_cast<int>(tabNames.size()); t++) {
+	for (int t = 0; t < std::ssize(tabNames); t++) {
 		TabInsert(t, tabNames[t].c_str());
 	}
 }
@@ -1188,7 +1201,7 @@ namespace {
 
 GUI::gui_string EscapeFilePath(const FilePath &path, [[maybe_unused]]Title destination) {
 	// Escape '&' characters in path, since they are interpreted in menus.
-	GUI::gui_string escaped(path.AsInternal());
+	GUI::gui_string escaped(path.AsText());
 #if defined(_WIN32)
 	// On Windows, '&' are interpreted in menus and tab names, so we need
 	// the escaped filename
@@ -1205,7 +1218,7 @@ GUI::gui_string AbbreviateWithTilde(const GUI::gui_string &path) {
 #if defined(GTK) || defined(__APPLE__)
 	FilePath homePath = FilePath::UserHomeDirectory();
 	if (homePath.IsSet()) {
-		const GUI::gui_string_view homeDirectory = homePath.AsInternal();
+		const GUI::gui_string_view homeDirectory = homePath.AsText();
 		if (path.starts_with(homeDirectory)) {
 			return GUI::gui_string(GUI_TEXT("~")) + path.substr(homeDirectory.size());
 		}
@@ -1350,6 +1363,8 @@ bool SciTEBase::AddFileToBuffer(const BufferState &bufferState) {
 				buffers.buffers[iBuffer].file.filePosition = bufferState.file.filePosition;
 				buffers.buffers[iBuffer].foldState = bufferState.foldState;
 				buffers.buffers[iBuffer].bookmarks = bufferState.bookmarks;
+				if (bufferState.readOnly)
+					buffers.buffers[iBuffer].isReadOnly = bufferState.readOnly;
 				if (buffers.buffers[iBuffer].lifeState == Buffer::LifeState::opened) {
 					// File was opened synchronously
 					RestoreState(buffers.buffers[iBuffer], true);
@@ -1570,7 +1585,7 @@ void SciTEBase::ToolsMenu(int item) {
 			return;
 		if (jobMode.saveBefore == 2 || (jobMode.saveBefore == 1 && (!(CurrentBuffer()->isDirty) || Save())) || SaveIfUnsure() != SaveResult::cancelled) {
 			if (jobMode.isFilter)
-				CurrentBuffer()->fileModTime -= 1;
+				CurrentBuffer()->WantReload();
 			if (jobMode.jobType == JobSubsystem::immediate) {
 				if (extender) {
 					extender->OnExecute(command.c_str());
@@ -2074,30 +2089,29 @@ void SciTEBase::GoMessage(int dir) {
 			SA::Position column;
 			SA::Line sourceLine = DecodeMessage(message.c_str(), source, style, column);
 			if (sourceLine >= 0) {
-				GUI::gui_string sourceString = GUI::StringFromUTF8(source);
-				FilePath sourcePath = FilePath(sourceString).NormalizePath();
+				const GUI::gui_string sourceString = GUI::StringFromUTF8(source);
+				const FilePath sourcePath = FilePath(sourceString).NormalizePath();
 				if (!filePath.Name().SameNameAs(sourcePath)) {
-					FilePath messagePath;
-					bool bExists = false;
-					if (Exists(dirNameAtExecute.AsInternal(), sourceString.c_str(), &messagePath)) {
-						bExists = true;
-					} else if (Exists(dirNameForExecute.AsInternal(), sourceString.c_str(), &messagePath)) {
-						bExists = true;
-					} else if (Exists(filePath.Directory().AsInternal(), sourceString.c_str(), &messagePath)) {
-						bExists = true;
-					} else if (Exists(nullptr, sourceString.c_str(), &messagePath)) {
-						bExists = true;
-					} else {
+					std::optional<FilePath> messagePath = FindPath(sourceString, dirNameAtExecute);
+					if (!messagePath) {
+						messagePath = FindPath(sourceString, dirNameForExecute);
+						if (!messagePath) {
+							messagePath = FindPath(sourceString, filePath.Directory());
+							if (!messagePath) {
+								messagePath = FindPath(sourceString, {});
+							}
+						}
+					}
+					if (!messagePath) {
 						// Look through buffers for name match
 						for (BufferIndex i = buffers.lengthVisible - 1; i >= 0; i--) {
 							if (sourcePath.Name().SameNameAs(buffers.buffers[i].file.Name())) {
 								messagePath = buffers.buffers[i].file;
-								bExists = true;
 							}
 						}
 					}
-					if (bExists) {
-						if (!Open(messagePath, ofSynchronous)) {
+					if (messagePath) {
+						if (!Open(messagePath.value(), ofSynchronous)) {
 							return;
 						}
 						CheckReload();
@@ -2121,7 +2135,7 @@ void SciTEBase::GoMessage(int dir) {
 				}
 
 				else if (style == SCE_ERR_DIFF_MESSAGE) {
-					const bool isAdd = message.find("+++ ") == 0;
+					const bool isAdd = message.starts_with("+++ ");
 					const SA::Line atLine = lookLine + (isAdd ? 1 : 2); // lines are in this order: ---, +++, @@
 					std::string atMessage = GetLine(wOutput, atLine);
 					if (atMessage.starts_with("@@ -")) {

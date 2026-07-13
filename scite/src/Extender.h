@@ -24,8 +24,7 @@ inline uintptr_t UptrFromString(const char *cp) noexcept {
 
 class ExtensionAPI {
 public:
-	virtual ~ExtensionAPI() {
-	}
+	virtual ~ExtensionAPI() = default;
 	enum Pane { paneEditor=1, paneOutput=2, paneFindOutput=3 };
 	virtual intptr_t Send(Pane p, Scintilla::Message msg, uintptr_t wParam=0, intptr_t lParam=0)=0;
 	virtual std::string Range(Pane p, Scintilla::Span range)=0;
@@ -53,7 +52,7 @@ public:
  */
 class Extension {
 public:
-	virtual ~Extension() {}
+	virtual ~Extension() = default;
 
 	virtual bool Initialise(ExtensionAPI *host_)=0;
 	virtual bool Finalise() noexcept =0;

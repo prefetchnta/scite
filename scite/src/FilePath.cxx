@@ -17,7 +17,9 @@
 #include <string_view>
 #include <vector>
 #include <set>
+#include <optional>
 #include <algorithm>
+#include <ranges>
 #include <memory>
 #include <chrono>
 
@@ -199,6 +201,10 @@ const GUI::gui_char *FilePath::AsInternal() const noexcept {
 	return fileName.c_str();
 }
 
+const GUI::gui_string &FilePath::AsText() const noexcept {
+	return fileName;
+}
+
 std::string FilePath::AsUTF8() const {
 	return GUI::UTF8FromString(fileName);
 }
@@ -356,10 +362,10 @@ FilePath FilePath::AbsolutePath() const {
 #ifdef _WIN32
 	// The run-time libraries for GCC and Visual C++ give different results for _fullpath
 	// so use the OS.
-	constexpr size_t maxAbsPath = 2000;
+	constexpr int maxAbsPath = 2000;
 	GUI::gui_char absPath[maxAbsPath] {};
 	GUI::gui_char *fileBit = nullptr;
-	::GetFullPathNameW(AsInternal(), std::size(absPath), absPath, &fileBit);
+	::GetFullPathNameW(AsInternal(), maxAbsPath, absPath, &fileBit);
 	return { absPath };
 #else
 	if (IsAbsolute()) {
@@ -375,6 +381,10 @@ FilePath FilePath::GetWorkingDirectory() {
 #ifdef _WIN32
 	GUI::gui_char *pdir = _wgetcwd(nullptr, 0);
 #else
+#if defined(__clang__)
+	// Suppress incorrect warning about NULL argument to getcwd
+	[[clang::suppress]]
+#endif
 	GUI::gui_char *pdir = getcwd(nullptr, 0);
 #endif
 	if (pdir) {
@@ -403,7 +413,7 @@ FilePath FilePath::UserHomeDirectory() {
 	return _wgetenv(GUI_TEXT("USERPROFILE"));
 #elif defined (__APPLE__)
 	// Normally sandboxed so $HOME points to sandbox directory not user home
-	struct passwd *pw = getpwuid(getuid());
+	const struct passwd *pw = getpwuid(getuid());
 	if (!pw) {
 		return {};
 	}
@@ -645,13 +655,13 @@ bool MakeLongPath(const GUI::gui_char *shortPath, GUI::gui_string &longPath) {
 	}
 	GUI::gui_string gsLong(1, L'\0');
 	// Call with too-short string returns size + terminating NUL
-	const DWORD size = (pfnGetLong)(shortPath, gsLong.data(), 0);
+	const DWORD size = pfnGetLong(shortPath, gsLong.data(), 0);
 	if (size == 0) {
 		return false;
 	}
 	gsLong.resize(size);
 	// Call with correct size string returns size without terminating NUL
-	const DWORD characters = (pfnGetLong)(shortPath, gsLong.data(), size);
+	const DWORD characters = pfnGetLong(shortPath, gsLong.data(), size);
 	if (characters != 0) {
 		longPath.assign(gsLong, 0, characters);
 	}
@@ -693,6 +703,20 @@ bool FilePath::CaseSensitive() noexcept {
 #else
 	return false;
 #endif
+}
+
+// Find a path if it exists.
+// If path is not absolute, it is combined with dir.
+// Returns absolute path if it exists else nullopt.
+std::optional<FilePath> FindPath(GUI::gui_string_view path, const FilePath &dir) {
+	FilePath copy(path);
+	if (!copy.IsAbsolute() && dir.IsSet()) {
+		copy.SetDirectory(dir);
+	}
+	if (copy.Exists()) {
+		return copy;
+	}
+	return {};
 }
 
 std::string CommandExecute(const GUI::gui_char *command, const GUI::gui_char *directoryForRun) {

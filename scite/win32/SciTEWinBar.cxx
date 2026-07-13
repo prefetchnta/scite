@@ -320,7 +320,7 @@ void SciTEWin::Notify(SCNotification *notification) {
 					const GUI::Point ptClient = ClientFromScreen(HwndOf(wTabBar), PointOfCursor());
 					const int index = TabAtPoint(HwndOf(wTabBar), ptClient);
 					if (index >= 0) {
-						GUI::gui_string path = buffers.buffers[index].file.AsInternal();
+						GUI::gui_string path = buffers.buffers[index].file.AsText();
 						// Handle '&' characters in path, since they are interpreted in
 						// tooltips.
 						size_t amp = 0;
@@ -704,7 +704,7 @@ BarButton bbs[] = {
 };
 
 WNDPROC stDefaultTabProc = nullptr;
-LRESULT PASCAL TabWndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK TabWndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam) {
 
 	static bool bDragBegin = false;
 	static int iDraggingTab = -1;
@@ -893,7 +893,7 @@ void SciTEWin::Creation() {
 	wContent = ::CreateWindowExW(
 			   flatterUI ? 0 : WS_EX_CLIENTEDGE,
 			   classNameInternal,
-			   TEXT("Source"),
+			   L"Source",
 			   WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 			   0, 0,
 			   widthWindow, 100,
@@ -905,8 +905,8 @@ void SciTEWin::Creation() {
 
 	wEditor.SetScintilla(::CreateWindowExW(
 				     0,
-				     TEXT("Scintilla"),
-				     TEXT("Source"),
+				     L"Scintilla",
+				     L"Source",
 				     WS_CHILD | WS_VSCROLL | WS_HSCROLL | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 				     0, 0,
 				     widthWindow, 100,
@@ -923,8 +923,8 @@ void SciTEWin::Creation() {
 
 	wOutput.SetScintilla(::CreateWindowExW(
 				     0,
-				     TEXT("Scintilla"),
-				     TEXT("Run"),
+				     L"Scintilla",
+				     L"Run",
 				     WS_CHILD | WS_VSCROLL | WS_HSCROLL | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 				     0, 0,
 				     widthWindow, 100,
@@ -945,7 +945,7 @@ void SciTEWin::Creation() {
 	HWND hwndToolBar = ::CreateWindowExW(
 				   0,
 				   TOOLBARCLASSNAME,
-				   TEXT(""),
+				   L"",
 				   WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS |
 				   TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NORESIZE,
 				   0, 0,
@@ -995,21 +995,22 @@ void SciTEWin::Creation() {
 	icce.dwICC = ICC_TAB_CLASSES;
 	InitCommonControlsEx(&icce);
 
+	constexpr const wchar_t *tabClassName = L"SciteTabCtrl";
 	WNDCLASS wndClass = {};
-	if (::GetClassInfo({}, WC_TABCONTROL, &wndClass) == 0)
+	if (::GetClassInfoW({}, WC_TABCONTROL, &wndClass) == 0)
 		exit(FALSE);
 	stDefaultTabProc = wndClass.lpfnWndProc;
 	wndClass.lpfnWndProc = TabWndProc;
 	wndClass.style = wndClass.style | CS_DBLCLKS;
-	wndClass.lpszClassName = TEXT("SciTeTabCtrl");
+	wndClass.lpszClassName = tabClassName;
 	wndClass.hInstance = hInstance;
-	if (RegisterClass(&wndClass) == 0)
+	if (RegisterClassW(&wndClass) == 0)
 		exit(FALSE);
 
 	wTabBar = ::CreateWindowExW(
 			  0,
-			  TEXT("SciTeTabCtrl"),
-			  TEXT("Tab"),
+			  tabClassName,
+			  L"Tab",
 			  WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS |
 			  TCS_FOCUSNEVER | TCS_TOOLTIPS,
 			  0, 0,
@@ -1040,7 +1041,7 @@ void SciTEWin::Creation() {
 	wStatusBar = ::CreateWindowExW(
 			     0,
 			     STATUSCLASSNAME,
-			     TEXT(""),
+			     L"",
 			     WS_CHILD | WS_CLIPSIBLINGS,
 			     0, 0,
 			     widthWindow, heightStatus,

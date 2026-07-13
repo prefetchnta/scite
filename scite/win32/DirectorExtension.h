@@ -9,14 +9,14 @@
 #define DIRECTOREXTENSION_H
 
 class DirectorExtension : public Extension {
-private:
 	ExtensionAPI *host {};
-	DirectorExtension() {} // Singleton
+	DirectorExtension() = default; // Singleton
+
+public:
 	// Deleted so DirectorExtension objects can not be copied.
 	DirectorExtension(const DirectorExtension &) = delete;
 	void operator=(const DirectorExtension &) = delete;
 
-public:
 	static DirectorExtension &Instance();
 
 	// Implement the Extension interface

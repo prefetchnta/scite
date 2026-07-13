@@ -14,6 +14,7 @@
 #include <clocale>
 
 #include <stdexcept>
+#include <utility>
 #include <compare>
 #include <tuple>
 #include <string>
@@ -23,6 +24,7 @@
 #include <set>
 #include <optional>
 #include <algorithm>
+#include <ranges>
 #include <memory>
 #include <chrono>
 #include <atomic>
@@ -30,12 +32,10 @@
 
 #include <fcntl.h>
 
-#include "ILexer.h"
-
 #include "ScintillaTypes.h"
 #include "ScintillaMessages.h"
 #include "ScintillaCall.h"
-
+#include "ILexer.h"
 #include "Scintilla.h"
 #include "SciLexer.h"
 #include "Lexilla.h"
@@ -81,7 +81,7 @@ void SciTEBase::SetImportMenu() {
 			if (importFiles[stackPos].IsSet()) {
 				GUI::gui_string entry = localiser.Text("Open");
 				entry += GUI_TEXT(" ");
-				entry += importFiles[stackPos].Name().AsInternal();
+				entry += importFiles[stackPos].Name().AsText();
 				SetMenuItem(menuOptions, IMPORT_START + stackPos, itemID, entry.c_str());
 			}
 		}
@@ -128,6 +128,9 @@ void SciTEBase::ReadEnvironment() {
 		const auto [key, value] = ViewSplit(*e, '=');
 		propsPlatform.Set(key, value);
 	}
+
+	propsPlatform.SetPath("SciteDefaultHome", GetSciteDefaultHome());
+	propsPlatform.SetPath("SciteUserHome", GetSciteUserHome());
 }
 
 /**
@@ -195,7 +198,7 @@ void SciTEBase::ReadDirectoryPropFile() {
 	propsDirectory.SetPath("FileExt", filePath.Extension());
 	propsDirectory.SetPath("FileNameExt", FileNameExt());
 
-	if (props.GetInt("properties.directory.enable") != 0) {
+	if (propsUser.GetInt("properties.directory.enable") != 0) {
 		const FilePath propfile = GetDirectoryPropertiesFileName();
 		const FilePath propfileDirectory = propfile.Directory();
 		const GUI::gui_string relPath = propfileDirectory.RelativePathTo(filePath);
@@ -207,6 +210,8 @@ void SciTEBase::ReadDirectoryPropFile() {
 	} else {
 		propsDirectory.SetPath("RelativePath", filePath.Name());
 	}
+	propsDirectory.Unset("SciteDefaultHome");
+	propsDirectory.Unset("SciteUserHome");
 }
 
 /**
@@ -220,7 +225,11 @@ void SciTEBase::ReadLocalPropFile() {
 	FilePath propfile = GetLocalPropertiesFileName();
 
 	propsLocal.Clear();
-	propsLocal.Read(propfile, propfile.Directory(), filter, nullptr, 0);
+	if (propsUser.GetInt("properties.local.enable", 1) != 0) {
+		propsLocal.Read(propfile, propfile.Directory(), filter, nullptr, 0);
+		propsLocal.Unset("SciteDefaultHome");
+		propsLocal.Unset("SciteUserHome");
+	}
 
 	props.Set("Chrome", "#C0C0C0");
 	props.Set("ChromeHighlight", "#FFFFFF");
@@ -395,27 +404,24 @@ void SciTEBase::SetMarkerFromProperty(GUI::ScintillaWindow &win, int marker, con
 }
 
 std::string SciTEBase::ExtensionFileName() const {
-	if (CurrentBufferConst()->overrideExtension.length()) {
+	if (!CurrentBufferConst()->overrideExtension.empty()) {
 		return CurrentBufferConst()->overrideExtension;
-	} else {
-		FilePath name = FileNameExt();
-		if (name.IsSet()) {
-#if !defined(GTK)
-			// Force extension to lower case
-			std::string extension = name.Extension().AsUTF8();
-			if (extension.empty()) {
-				return name.AsUTF8();
-			} else {
-				LowerCaseAZ(extension);
-				return name.BaseName().AsUTF8() + "." + extension;
-			}
-#else
-			return name.AsUTF8();
-#endif
-		} else {
-			return props.GetString("default.file.ext");
-		}
 	}
+	const FilePath name = FileNameExt();
+	if (name.IsSet()) {
+#if !defined(GTK)
+		// Force extension to lower case
+		std::string extension = name.Extension().AsUTF8();
+		if (extension.empty()) {
+			return name.AsUTF8();
+		}
+		LowerCaseAZ(extension);
+		return name.BaseName().AsUTF8() + "." + extension;
+#else
+		return name.AsUTF8();
+#endif
+	}
+	return props.GetString("default.file.ext");
 }
 
 void SciTEBase::ForwardPropertyToEditor(const char *key) {
@@ -440,16 +446,16 @@ void SciTEBase::ReadAPI(const std::string &fileNameForExtension) {
 				    fileNameForExtension);
 	if (sApiFileNames.length() > 0) {
 		std::vector<std::string> vApiFileNames = StringSplit(sApiFileNames, ';');
-		std::vector<char> data;
+		std::string data;
 
 		// Load files into data
 		for (const std::string &vApiFileName : vApiFileNames) {
 			std::string contents = FilePath(GUI::StringFromUTF8(vApiFileName)).Read();
-			data.insert(data.end(), contents.begin(), contents.end());
+			data.append(contents);
 		}
 
 		// Initialise apis
-		if (data.size() > 0) {
+		if (!data.empty()) {
 			apis.Set(data);
 		}
 	}
@@ -523,6 +529,7 @@ const char *propertiesToForward[] = {
 	"fold.fsharp.comment.stream",
 	"fold.fsharp.imports",
 	"fold.fsharp.preprocessor",
+	"fold.fsharp.quotes",
 	"fold.gdscript.quotes",
 	"fold.haskell.imports",
 	"fold.html",
@@ -563,7 +570,9 @@ const char *propertiesToForward[] = {
 	"lexer.bash.styling.inside.string",
 	"lexer.caml.magic",
 	"lexer.cpp.allow.dollars",
+	"lexer.cpp.allow.hashes",
 	"lexer.cpp.backquoted.strings",
+	"lexer.cpp.enable.preprocessor",
 	"lexer.cpp.escape.sequence",
 	"lexer.cpp.hashquoted.strings",
 	"lexer.cpp.track.preprocessor",
@@ -577,6 +586,7 @@ const char *propertiesToForward[] = {
 	"lexer.edifact.highlight.un.all",
 	"lexer.errorlist.escape.sequences",
 	"lexer.errorlist.value.separate",
+	"lexer.escseq.colour.text",
 	"lexer.flagship.styling.within.preprocessor",
 	"lexer.gdscript.keywords2.no.sub.identifiers",
 	"lexer.gdscript.literals.binary",
@@ -610,6 +620,7 @@ const char *propertiesToForward[] = {
 	"lexer.python.strings.f",
 	"lexer.python.strings.f.pep.701",
 	"lexer.python.strings.over.newline",
+	"lexer.python.strings.t",
 	"lexer.python.strings.u",
 	"lexer.python.unicode.identifiers",
 	"lexer.r.escape.sequence",
@@ -738,11 +749,10 @@ std::string SciTEBase::GetFileNameProperty(const char *name) {
 	namePlusDot.append(".");
 	std::string valueForFileName = props.GetNewExpandString(namePlusDot,
 				       ExtensionFileName());
-	if (valueForFileName.length() != 0) {
+	if (!valueForFileName.empty()) {
 		return valueForFileName;
-	} else {
-		return props.GetString(name);
 	}
+	return props.GetString(name);
 }
 
 void SciTEBase::SetRepresentations() {
@@ -827,7 +837,11 @@ void SciTEBase::ReadProperties() {
 	const std::string languageCurrent = wEditor.LexerLanguage();
 	if (language != languageCurrent) {
 		if (language.starts_with("script_")) {
-			wEditor.SetILexer(nullptr);
+			if (propsUser.GetInt("allow.script.lexer")) {
+				wEditor.SetILexer(nullptr);
+			} else {
+				wEditor.SetILexer(Lexilla::MakeLexer("null"));
+			}
 		} else {
 			Scintilla::ILexer5 *plexer = Lexilla::MakeLexer(language);
 			wEditor.SetILexer(plexer);
@@ -1277,10 +1291,8 @@ void SciTEBase::ReadProperties() {
 		}
 	}
 
-	std::vector<std::string> fileSets = StringSplit(props.GetNewExpandString("find.files"), '|');
-	for (const std::string &fileSet : fileSets) {
-		memFiles.Append(fileSet);
-	}
+	const std::vector<std::string> fileSets = StringSplit(props.GetNewExpandString("find.files"), '|');
+	memFiles.AppendList(fileSets);
 
 	wEditor.SetWrapVisualFlags(static_cast<SA::WrapVisualFlag>(props.GetInt("wrap.visual.flags")));
 	wEditor.SetWrapVisualFlagsLocation(static_cast<SA::WrapVisualLocation>(props.GetInt("wrap.visual.flags.location")));
@@ -1560,24 +1572,31 @@ void SciTEBase::ReadProperties() {
 	ReadEditorConfig(fileNameForExtension);
 
 	if (extender) {
-		FilePath defaultDir = GetDefaultDirectory();
-		FilePath scriptPath;
-
 		// Check for an extension script
-		GUI::gui_string extensionFile = GUI::StringFromUTF8(
-							props.GetNewExpandString("extension.", fileNameForExtension));
-		if (extensionFile.length()) {
-			// find file in local directory
-			FilePath docDir = filePath.Directory();
-			if (Exists(docDir.AsInternal(), extensionFile.c_str(), &scriptPath)) {
-				// Found file in document directory
-				extender->Load(scriptPath.AsUTF8().c_str());
-			} else if (Exists(defaultDir.AsInternal(), extensionFile.c_str(), &scriptPath)) {
-				// Found file in global directory
-				extender->Load(scriptPath.AsUTF8().c_str());
-			} else if (Exists(GUI_TEXT(""), extensionFile.c_str(), &scriptPath)) {
-				// Found as completely specified file name
-				extender->Load(scriptPath.AsUTF8().c_str());
+		const int allowLocalScript = propsUser.GetInt("allow.local.script");
+		std::string extensionScript;
+		if (allowLocalScript) {
+			extensionScript = props.GetNewExpandString("extension.", fileNameForExtension);
+		} else {
+			extensionScript = propsUser.GetNewExpandString("extension.", fileNameForExtension);
+		}
+		const GUI::gui_string extensionFile = GUI::StringFromUTF8(extensionScript);
+		if (!extensionFile.empty()) {
+			std::optional<FilePath> scriptPath;
+			if (allowLocalScript) {
+				// Find file in document directory
+				scriptPath = FindPath(extensionFile, filePath.Directory());
+			}
+			if (!scriptPath) {
+				// Find file in global directory
+				scriptPath = FindPath(extensionFile, GetDefaultDirectory());
+				if (!scriptPath) {
+					// Find as completely specified file name
+					scriptPath = FindPath(extensionFile, {});
+				}
+			}
+			if (scriptPath) {
+				extender->Load(scriptPath->AsUTF8().c_str());
 			}
 		}
 	}
@@ -1745,7 +1764,7 @@ void SciTEBase::ReadFontProperties() {
 		SetStyleBlock(wEditor, "error", diagnosticStyleStart, diagnosticStyleStart+diagnosticStyles-1);
 	}
 
-	const int diffToSecondary = static_cast<int>(wEditor.DistanceToSecondaryStyles());
+	const int diffToSecondary = wEditor.DistanceToSecondaryStyles();
 	for (const unsigned char subStyleBase : subStyleBases) {
 		const int subStylesStart = wEditor.SubStylesStart(subStyleBase);
 		const int subStylesLength = wEditor.SubStylesLength(subStyleBase);
@@ -1853,14 +1872,17 @@ GUI::gui_string Localization::Text(std::string_view sv, bool retainIfNotFound) c
 	return GUI::StringFromUTF8(std::string(sv));
 }
 
-GUI::gui_string SciTEBase::LocaliseMessage(const char *s, const GUI::gui_char *param0, const GUI::gui_char *param1, const GUI::gui_char *param2) {
+GUI::gui_string SciTEBase::LocaliseMessage(std::string_view s, std::optional<GUI::gui_string_view> param0, std::optional<GUI::gui_string_view> param1, std::optional<GUI::gui_string_view> param2) {
 	GUI::gui_string translation = localiser.Text(s);
-	if (param0)
-		Substitute(translation, GUI_TEXT("^0"), param0);
-	if (param1)
-		Substitute(translation, GUI_TEXT("^1"), param1);
-	if (param2)
-		Substitute(translation, GUI_TEXT("^2"), param2);
+	if (param0) {
+		Substitute(translation, GUI_TEXT("^0"), *param0);
+	}
+	if (param1) {
+		Substitute(translation, GUI_TEXT("^1"), *param1);
+	}
+	if (param2) {
+		Substitute(translation, GUI_TEXT("^2"), *param2);
+	}
 	return translation;
 }
 
