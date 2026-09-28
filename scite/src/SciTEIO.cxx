@@ -415,7 +415,7 @@ void SciTEBase::CompleteOpen(OpenCompletion oc) {
 	if (!wEditor.UndoCollection()) {
 		wEditor.SetUndoCollection(true);
 		wEditor.SetSavePoint();
-		wEditor.SetChangeHistory(static_cast<SA::ChangeHistoryOption>(props.GetInt("change.history")));
+		wEditor.SetChangeHistory(props.GetEnum("change.history", SA::ChangeHistoryOption::Disabled));
 	} else {
 		wEditor.SetSavePoint();
 	}
@@ -1405,7 +1405,8 @@ void SciTEBase::OpenFromStdin(bool UseOutputPane) {
 }
 
 void SciTEBase::OpenFilesFromStdin() {
-	char data[8 * 1024] {};
+	constexpr size_t stdinBlockSize = 8 * 1024;
+	char data[stdinBlockSize] {};
 
 	/* if stdin is blocked, do not execute this method */
 	if (IsStdinBlocked())
@@ -1457,7 +1458,11 @@ public:
 		if (pos >= valid) {
 			return 0;
 		}
-		return buffer[pos++];
+		const char nextValue = buffer[pos++];
+		if ((pos >= valid) && readAll) {
+			exhausted = true;
+		}
+		return nextValue;
 	}
 	[[nodiscard]] bool BufferContainsNull() noexcept {
 		EnsureData();
@@ -1483,9 +1488,9 @@ public:
 	}
 	// Deleted so FileReader objects can not be copied.
 	FileReader(const FileReader &) = delete;
-	const char *Next() {
+	bool Next() {
 		if (bf->Exhausted()) {
-			return nullptr;
+			return false;
 		}
 		lineToShow.clear();
 		while (!bf->Exhausted()) {
@@ -1504,13 +1509,16 @@ public:
 		if (!caseSensitive) {
 			LowerCaseAZ(lineToCompare);
 		}
-		return lineToCompare.c_str();
+		return true;
 	}
 	[[nodiscard]] int LineNumber() const noexcept {
 		return lineNum;
 	}
-	[[nodiscard]] const char *Original() const noexcept {
-		return lineToShow.c_str();
+	[[nodiscard]] std::string_view ComparisonText() const noexcept {
+		return lineToCompare;
+	}
+	[[nodiscard]] std::string_view OriginalText() const noexcept {
+		return lineToShow;
 	}
 	[[nodiscard]] bool BufferContainsNull() noexcept {
 		return bf->BufferContainsNull();
@@ -1519,6 +1527,25 @@ public:
 
 constexpr bool IsWordCharacter(int ch) noexcept {
 	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || (ch == '_');
+}
+
+bool LineMatches(std::string_view line, std::string_view search, bool wholeWord) noexcept {
+	size_t match = line.find(search);
+	if (match == std::string_view::npos) {
+		return false;
+	}
+	if (!wholeWord) {
+		return true;
+	}
+	while (match != std::string_view::npos) {
+		const size_t endPos = match + search.length();
+		if (((match == 0) || !IsWordCharacter(line[match - 1])) &&
+			((endPos == line.length()) || !IsWordCharacter(line[endPos]))) {
+			return true;
+		}
+		match = line.find(search, match + 1);
+	}
+	return false;
 }
 
 }
@@ -1534,41 +1561,25 @@ void SciTEBase::GrepRecursive(GrepFlags gf, const FilePath &baseDir, const char 
 	FilePathSet directories;
 	FilePathSet files;
 	baseDir.List(directories, files);
-	const size_t searchLength = strlen(searchString);
 	std::string os;
 	for (const FilePath &fPath : files) {
 		if (jobQueue.Cancelled())
 			return;
 		if ((fileTypes.empty() || fPath.Matches(fileTypes)) &&
 			(excludedTypes.empty() || !fPath.Matches(excludedTypes))) {
-			//OutputAppendStringSynchronised(fPath.AsUTF8());
-			//OutputAppendStringSynchronised("\n");
 			FileReader fr(fPath, FlagIsSet(gf, GrepFlags::matchCase));
 			if (FlagIsSet(gf, GrepFlags::binary) || !fr.BufferContainsNull()) {
-				while (const char *line = fr.Next()) {
+				while (fr.Next()) {
 					if (((fr.LineNumber() % checkAfterLines) == 0) && jobQueue.Cancelled())
 						return;
-					const char *match = strstr(line, searchString);
-					if (match) {
-						if (FlagIsSet(gf, GrepFlags::wholeWord)) {
-							const char *lineEnd = line + strlen(line);
-							while (match) {
-								if (((match == line) || !IsWordCharacter(match[-1])) &&
-										((match + searchLength == lineEnd) || !IsWordCharacter(match[searchLength]))) {
-									break;
-								}
-								match = strstr(match + 1, searchString);
-							}
-						}
-						if (match) {
-							os.append(fPath.AsUTF8());
-							os.append(":");
-							std::string lNumber = StdStringFromInteger(fr.LineNumber());
-							os.append(lNumber);
-							os.append(":");
-							os.append(fr.Original());
-							os.append("\n");
-						}
+					if (LineMatches(fr.ComparisonText(), searchString, FlagIsSet(gf, GrepFlags::wholeWord))) {
+						os.append(fPath.AsUTF8());
+						os.append(":");
+						std::string lNumber = StdStringFromInteger(fr.LineNumber());
+						os.append(lNumber);
+						os.append(":");
+						os.append(fr.OriginalText());
+						os.append("\n");
 					}
 				}
 			}

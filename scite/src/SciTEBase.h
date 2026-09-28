@@ -141,10 +141,10 @@ public:
 };
 
 struct BackgroundActivities {
-	int loaders;
-	int storers;
-	size_t totalWork;
-	size_t totalProgress;
+	int loaders = 0;
+	int storers = 0;
+	size_t totalWork = 0;
+	size_t totalProgress = 0;
 	GUI::gui_string fileNameLast;
 };
 
@@ -163,16 +163,16 @@ public:
 	bool initialised;
 
 	BufferList();
-	BufferIndex size() const noexcept;
+	[[nodiscard]] BufferIndex size() const noexcept;
 	void Allocate(BufferIndex maxSize);
 	BufferIndex Add();
 	BufferIndex GetDocumentByWorker(const FileWorker *pFileWorker) const noexcept;
 	BufferIndex GetDocumentByName(const FilePath &filename, bool excludeCurrent=false) const noexcept;
 	void RemoveInvisible(BufferIndex index);
 	void RemoveCurrent();
-	BufferIndex Current() const noexcept;
-	Buffer *CurrentBuffer() noexcept;
-	const Buffer *CurrentBufferConst() const noexcept;
+	[[nodiscard]] BufferIndex Current() const noexcept;
+	[[nodiscard]] Buffer *CurrentBuffer() noexcept;
+	[[nodiscard]] const Buffer *CurrentBufferConst() const noexcept;
 	void SetCurrent(BufferIndex index) noexcept;
 	BufferIndex StackNext() noexcept;
 	BufferIndex StackPrev() noexcept;
@@ -180,10 +180,10 @@ public:
 	void MoveToStackTop(BufferIndex index);
 	void ShiftTo(BufferIndex indexFrom, BufferIndex indexTo) noexcept;
 	void Swap(BufferIndex indexA, BufferIndex indexB);
-	bool SingleBuffer() const noexcept;
-	BackgroundActivities CountBackgroundActivities() const;
-	bool SavingInBackground() const noexcept;
-	bool GetVisible(BufferIndex index) const noexcept;
+	[[nodiscard]] bool SingleBuffer() const noexcept;
+	[[nodiscard]] BackgroundActivities CountBackgroundActivities() const;
+	[[nodiscard]] bool SavingInBackground() const noexcept;
+	[[nodiscard]] bool GetVisible(BufferIndex index) const noexcept;
 	void SetVisible(BufferIndex index, bool visible);
 private:
 	void PopStack() noexcept;
@@ -248,26 +248,17 @@ struct CurrentWordHighlight {
 		delay,              // Delay before to highlight the word at the caret.
 		delayJustEnded,     // Delay has just ended. This state allows to ignore next HighlightCurrentWord (UpdateUI and SC_UPDATE_CONTENT for setting indicators).
 		delayAlreadyElapsed // Delay has already elapsed, word at the caret and occurrences are (or have to be) highlighted.
-	} statesOfDelay;
-	bool isEnabled;
-	bool textHasChanged;
+	} statesOfDelay = StatesOfDelay::noDelay;
+	bool isEnabled = false;
 	GUI::ElapsedTime elapsedTimes;
-	bool isOnlyWithSameStyle;
-
-	CurrentWordHighlight() {
-		statesOfDelay = StatesOfDelay::noDelay;
-		isEnabled = false;
-		textHasChanged = false;
-		isOnlyWithSameStyle = false;
-	}
+	bool isOnlyWithSameStyle = false;
 };
 
 class Localization : public PropSetFile, public ILocalize {
 	std::string missing;
 public:
-	bool read;
-	Localization() : PropSetFile(true), read(false) {
-	}
+	bool read = false;
+	Localization() : PropSetFile(true) {}
 	// Deleted so Localization objects can not be copied.
 	Localization(const Localization &) = delete;
 	Localization(Localization &&) = delete;
@@ -563,7 +554,7 @@ protected:
 	GUI::ScintillaWindow &PaneSource(int destination) noexcept;
 	intptr_t CallFocusedElseDefault(int defaultValue, SA::Message msg, uintptr_t wParam = 0, intptr_t lParam = 0);
 	void CallChildren(SA::Message msg, uintptr_t wParam = 0, intptr_t lParam = 0);
-	std::string GetTranslationToAbout(const char *const propname, bool retainIfNotFound = true);
+	std::string GetTranslationToAbout(std::string_view propname, bool retainIfNotFound = true);
 	SA::Position LengthDocument();
 	SA::Position GetCaretInLine();
 	std::string GetLine(SA::Line line);
@@ -750,7 +741,6 @@ protected:
 	void GoMatchingBrace(bool select);
 	void GoMatchingPreprocCond(int direction, bool select);
 	virtual void FindReplace(bool replace) = 0;
-	void OutputAppendString(std::string_view s);
 	virtual void OutputAppendStringSynchronised(std::string_view s);
 	virtual void Execute();
 	virtual void StopExecute() = 0;
@@ -831,7 +821,6 @@ protected:
 	void BookmarkToggle(SA::Line lineno = -1);
 	void BookmarkNext(bool forwardScan = true, bool select = false);
 	void BookmarkSelectAll();
-	void SetOutputVisibility(bool show);
 	virtual void ShowOutputOnMainThread();
 	void ToggleOutputVisible();
 	virtual void SizeContentWindows() = 0;
@@ -846,7 +835,7 @@ protected:
 	virtual void CheckMenusClipboard();
 	virtual void CheckMenus();
 	virtual void AddToPopUp(const char *label, int cmd = 0, bool enabled = true) = 0;
-	void ContextMenu(GUI::ScintillaWindow &wSource, GUI::Point pt, GUI::Point ptClient, GUI::Window wCmd);
+	void ContextMenu(GUI::ScintillaWindow &wSource, GUI::Point pt, GUI::Point ptClient, const GUI::Window &wCmd);
 
 	void DeleteFileStackMenu();
 	void SetFileStackMenu();
@@ -916,7 +905,7 @@ protected:
 	void MoveSplit(GUI::Point ptNewDrag);
 
 	virtual void TimerStart(int mask);
-	virtual void TimerEnd(int mask);
+	virtual void TimerEnd(int mask) noexcept;
 	void OnTimer();
 	virtual void SetIdler(bool on);
 	void OnIdle();
@@ -954,7 +943,7 @@ protected:
 	std::string Property(const char *key) override;
 	void SetProperty(const char *key, const char *val) override;
 	void UnsetProperty(const char *key) override;
-	uintptr_t GetInstance() override;
+	uintptr_t GetInstance() noexcept override;
 	void ShutDown() override;
 	void Perform(const char *actionList) override;
 	void DoMenuCommand(int cmdID) override;
@@ -973,7 +962,7 @@ public:
 
 	enum { maxParam = 4 };
 
-	explicit SciTEBase(Extension *ext = 0);
+	explicit SciTEBase(Extension *ext = nullptr);
 	// Deleted copy-constructor and assignment operator.
 	SciTEBase(const SciTEBase &) = delete;
 	SciTEBase(SciTEBase &&) = delete;
@@ -981,7 +970,7 @@ public:
 	void operator=(SciTEBase &&) = delete;
 	~SciTEBase() override;
 
-	void Finalise();
+	void Finalise() noexcept;
 
 	GUI::WindowID GetID() const noexcept { return wSciTE.GetID(); }
 
@@ -989,6 +978,8 @@ public:
 	// WorkerListener
 	void PostOnMainThread(int cmd, Worker *pWorker) override = 0;
 	virtual void WorkerCommand(int cmd, Worker *pWorker);
+	void OutputAppendString(std::string_view s);
+	void SetOutputVisibility(bool show);
 };
 
 const char *LineEndString(SA::EndOfLine eolMode) noexcept;

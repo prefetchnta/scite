@@ -9,12 +9,12 @@
 #define SCITE_H
 
 // Version numbers and dates
-#define VERSION_SCITE "5.6.4"
-#define VERSION_WORDS 5, 6, 4, 0
-#define COPYRIGHT_DATES "December 1998-July 2026"
+#define VERSION_SCITE "5.6.7"
+#define VERSION_WORDS 5, 6, 7, 0
+#define COPYRIGHT_DATES "December 1998-September 2026"
 #define COPYRIGHT_YEARS "1998-2026"
-#define VERSION_SCINTILLA "5.6.4"
-#define VERSION_LEXILLA "5.5.1"
+#define VERSION_SCINTILLA "5.6.7"
+#define VERSION_LEXILLA "5.5.4"
 
 // Menu IDs.
 // These are located 100 apart. No one will want more than 100 in each menu ;)
@@ -144,6 +144,7 @@
 #define IDM_TOOLWIN			352
 #define IDM_STATUSWIN		353
 #define IDM_TABWIN			354
+#define IDM_CONTENTWIN		355
 
 // Options
 #define IDM_SPLITVERTICAL		401
@@ -276,6 +277,8 @@
 #define IDR_CLOSEFILE 100
 #define IDR_CLOSEFILE24 107
 #define IDC_DRAGDROP        401
+
+#define IDI_BUSY 2
 
 #define IDBM_WORD 101
 #define IDBM_CASE 102

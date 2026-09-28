@@ -64,6 +64,14 @@
 #include "Searcher.h"
 #include "SciTEBase.h"
 
+namespace {
+
+constexpr int minimumSplit = 20;
+constexpr int baseSplitHorizontal = 300;
+constexpr int baseSplitVertical = 100;
+
+}
+
 Searcher::Searcher() {
 	wholeWord = false;
 	matchCase = false;
@@ -314,7 +322,7 @@ SciTEBase::~SciTEBase() {
 	popup.Destroy();
 }
 
-void SciTEBase::Finalise() {
+void SciTEBase::Finalise() noexcept {
 	TimerEnd(timerAutoSave);
 }
 
@@ -348,6 +356,35 @@ void SciTEBase::WorkerCommand(int cmd, Worker *pWorker) {
 	}
 }
 
+void SciTEBase::OutputAppendString(std::string_view s) {
+	wOutput.AppendText(s.length(), s.data());
+	if (scrollOutput) {
+		const SA::Line line = wOutput.LineCount();
+		const SA::Position lineStart = wOutput.LineStart(line);
+		wOutput.GotoPos(lineStart);
+	}
+}
+
+void SciTEBase::SetOutputVisibility(bool show) {
+	if (show) {
+		if (heightOutput <= 0) {
+			if (previousHeightOutput < minimumSplit) {
+				heightOutput = NormaliseSplit(splitVertical ? baseSplitHorizontal : baseSplitVertical);
+				previousHeightOutput = heightOutput;
+			} else {
+				heightOutput = NormaliseSplit(previousHeightOutput);
+			}
+		}
+	} else {
+		if (heightOutput > 0) {
+			heightOutput = NormaliseSplit(0);
+			WindowSetFocus(wEditor);
+		}
+	}
+	SizeSubWindows();
+	Redraw();
+}
+
 SystemAppearance SciTEBase::CurrentAppearance() const noexcept {
 	return {};
 }
@@ -374,19 +411,17 @@ GUI::ScintillaWindow &SciTEBase::PaneFocused() noexcept {
 GUI::ScintillaWindow &SciTEBase::PaneSource(int destination) noexcept {
 	if (destination == IDM_SRCWIN)
 		return wEditor;
-	else if (destination == IDM_RUNWIN)
+	if (destination == IDM_RUNWIN)
 		return wOutput;
-	else
-		return PaneFocused();
+	return PaneFocused();
 }
 
 intptr_t SciTEBase::CallFocusedElseDefault(int defaultValue, SA::Message msg, uintptr_t wParam, intptr_t lParam) {
 	if (wOutput.HasFocus())
 		return wOutput.Call(msg, wParam, lParam);
-	else if (wEditor.HasFocus())
+	if (wEditor.HasFocus())
 		return wEditor.Call(msg, wParam, lParam);
-	else
-		return defaultValue;
+	return defaultValue;
 }
 
 void SciTEBase::CallChildren(SA::Message msg, uintptr_t wParam, intptr_t lParam) {
@@ -394,7 +429,7 @@ void SciTEBase::CallChildren(SA::Message msg, uintptr_t wParam, intptr_t lParam)
 	wOutput.Call(msg, wParam, lParam);
 }
 
-std::string SciTEBase::GetTranslationToAbout(const char *const propname, bool retainIfNotFound) {
+std::string SciTEBase::GetTranslationToAbout(std::string_view propname, bool retainIfNotFound) {
 #if !defined(GTK)
 	return GUI::UTF8FromString(localiser.Text(propname, retainIfNotFound));
 #else
@@ -865,7 +900,8 @@ void SciTEBase::HighlightCurrentWord(bool highlight) {
 	const bool noUserSelection = sel.start == sel.end;
 	std::string sWordToFind = RangeExtendAndGrab(wCurrent, sel,
 				  &SciTEBase::islexerwordcharforsel);
-	if (sWordToFind.empty() || (sWordToFind.find_first_of("\n\r ") != std::string::npos))
+	const std::string_view whitespace("\n\r ", 4);
+	if (sWordToFind.empty() || (sWordToFind.find_first_of(whitespace) != std::string::npos))
 		return; // No highlight when no selection or multi-lines selection.
 	if (noUserSelection && currentWordHighlight.statesOfDelay == CurrentWordHighlight::StatesOfDelay::noDelay) {
 		// Manage delay before highlight when no user selection but there is word at the caret.
@@ -1013,10 +1049,6 @@ std::string SciTEBase::EncodeString(const std::string &s) {
 }
 
 namespace {
-
-constexpr int minimumSplit = 20;
-constexpr int baseSplitHorizontal = 300;
-constexpr int baseSplitVertical = 100;
 
 std::string UnSlashAsNeeded(const std::string &s, bool escapes, bool regularExpression) {
 	if (escapes) {
@@ -1464,15 +1496,6 @@ void SciTEBase::UIClosed() {
 void SciTEBase::UIHasFocus() {
 }
 
-void SciTEBase::OutputAppendString(std::string_view s) {
-	wOutput.AppendText(s.length(), s.data());
-	if (scrollOutput) {
-		const SA::Line line = wOutput.LineCount();
-		const SA::Position lineStart = wOutput.LineStart(line);
-		wOutput.GotoPos(lineStart);
-	}
-}
-
 void SciTEBase::OutputAppendStringSynchronised(std::string_view s) {
 	// This may be called from secondary thread so always use Send instead of Call
 	wOutput.Send(SCI_APPENDTEXT, s.length(), SptrFromString(s.data()));
@@ -1529,26 +1552,6 @@ void SciTEBase::Execute() {
 	}
 	CheckMenus();
 	dirNameAtExecute = filePath.Directory();
-}
-
-void SciTEBase::SetOutputVisibility(bool show) {
-	if (show) {
-		if (heightOutput <= 0) {
-			if (previousHeightOutput < minimumSplit) {
-				heightOutput = NormaliseSplit(splitVertical ? baseSplitHorizontal : baseSplitVertical);
-				previousHeightOutput = heightOutput;
-			} else {
-				heightOutput = NormaliseSplit(previousHeightOutput);
-			}
-		}
-	} else {
-		if (heightOutput > 0) {
-			heightOutput = NormaliseSplit(0);
-			WindowSetFocus(wEditor);
-		}
-	}
-	SizeSubWindows();
-	Redraw();
 }
 
 // Background threads that are send text to the output pane want it to be made visible.
@@ -2413,8 +2416,16 @@ void SciTEBase::SetTextProperties(
 	const std::string ro = GUI::UTF8FromString(localiser.Text("READ"));
 	ps.Set("ReadOnly", CurrentBuffer()->isReadOnly ? ro : "");
 
-	const SA::EndOfLine eolMode = wEditor.EOLMode();
-	ps.Set("EOLMode", eolMode == SA::EndOfLine::CrLf ? "CR+LF" : (eolMode == SA::EndOfLine::Lf ? "LF" : "CR"));
+	ps.Set("EOLMode", [](auto eolMode) {
+		switch (eolMode) {
+		case SA::EndOfLine::CrLf:
+			return "CR+LF";
+		case SA::EndOfLine::Cr:
+			return "CR";
+		default:
+			return "LF";
+		}
+	}(wEditor.EOLMode()));
 
 	ps.Set("BufferLength", std::to_string(LengthDocument()));
 
@@ -3034,6 +3045,21 @@ void SciTEBase::AddCommand(std::string_view cmd, std::string_view dir, JobSubsys
 		}
 	} else {
 		directoryRun = filePath.Directory();
+	}
+	if (jobType == JobSubsystem::cli || jobType == JobSubsystem::shell) {
+		const std::string unsafeCharacters = propsUser.GetString("unsafe.path.characters");
+		if (!unsafeCharacters.empty()) {
+			const std::string uPath = filePath.AsUTF8();
+			const size_t unsafePos = uPath.find_first_of(unsafeCharacters);
+			if (unsafePos != std::string::npos) {
+				// Handle unsafe path
+				GUI::gui_string msg = LocaliseMessage(
+					"Can't run command with unsafe characters in path '^0'\nunsafe.path.characters '^1'.",
+					filePath.AsText(), GUI::StringFromUTF8(unsafeCharacters));
+				WindowMessageBox(wSciTE, msg);
+				return;
+			}
+		}
 	}
 	jobQueue.AddCommand(cmd, directoryRun, jobType, input, flags);
 }
@@ -3955,25 +3981,28 @@ void SciTEBase::NewLineInOutput() {
 
 void SciTEBase::UpdateUI(const SCNotification *notification) {
 	const bool handled = extender && extender->OnUpdateUI();
+	const bool fromEditPane = notification->nmhdr.idFrom == IDM_SRCWIN;
 	if (!handled) {
-		BraceMatch(notification->nmhdr.idFrom == IDM_SRCWIN);
-		if (notification->nmhdr.idFrom == IDM_SRCWIN) {
+		BraceMatch(fromEditPane);
+		if (fromEditPane) {
 			UpdateStatusBar(false);
 		}
 		CheckMenusClipboard();
 	}
+	const SA::Update updated = static_cast<SA::Update>(notification->updated);
+	if (fromEditPane && FlagIsSet(updated, SA::Update::LineCount) && lineNumbers && lineNumbersExpand) {
+		SetLineNumberWidth();
+	}
 	if (CurrentBuffer()->findMarks == Buffer::FindMarks::modified) {
 		RemoveFindMarks();
 	}
-	const SA::Update updated = static_cast<SA::Update>(notification->updated);
-	if (FlagIsSet(updated, SA::Update::Selection) || FlagIsSet(updated, SA::Update::Content)) {
-		if ((notification->nmhdr.idFrom == IDM_SRCWIN) == (pwFocussed == &wEditor)) {
+	if (FlagIsSet(updated, SA::Update::Selection) || FlagIsSet(updated, SA::Update::Text)) {
+		if (fromEditPane == (pwFocussed == &wEditor)) {
 			// Only highlight focused pane.
 			if (FlagIsSet(updated, SA::Update::Selection)) {
 				currentWordHighlight.statesOfDelay = CurrentWordHighlight::StatesOfDelay::noDelay; // Selection has just been updated, so delay is disabled.
-				currentWordHighlight.textHasChanged = false;
 				HighlightCurrentWord(true);
-			} else if (currentWordHighlight.textHasChanged) {
+			} else { // SA::Update::Text
 				HighlightCurrentWord(false);
 			}
 		}
@@ -4016,18 +4045,11 @@ void SciTEBase::Modified(const SCNotification *notification) {
 		// notifications may fire, but we will end up here in the end
 		CheckCanUndoRedo();
 	} else if (textWasModified) {
-		if ((notification->nmhdr.idFrom == IDM_SRCWIN) == (pwFocussed == &wEditor)) {
-			currentWordHighlight.textHasChanged = true;
-		}
 		// This will be called a lot, and usually means "typing".
 		SetCanUndoRedo(true, false);
 		if (CurrentBuffer()->findMarks == Buffer::FindMarks::marked) {
 			CurrentBuffer()->findMarks = Buffer::FindMarks::modified;
 		}
-	}
-
-	if (notification->linesAdded && lineNumbers && lineNumbersExpand) {
-		SetLineNumberWidth();
 	}
 
 	if (FlagIsSet(modificationType, SA::ModificationFlags::ChangeFold)) {
@@ -4274,7 +4296,7 @@ void SciTEBase::CheckMenus() {
 	EnableAMenuItem(IDM_MACROSTOPRECORD, recording);
 }
 
-void SciTEBase::ContextMenu(GUI::ScintillaWindow &wSource, GUI::Point pt, GUI::Point ptClient, GUI::Window wCmd) {
+void SciTEBase::ContextMenu(GUI::ScintillaWindow &wSource, GUI::Point pt, GUI::Point ptClient, const GUI::Window &wCmd) {
 	const SA::Position currentPos = wSource.CurrentPos();
 	const SA::Position anchor = wSource.Anchor();
 	contextSelection = wSource.SelectionFromPoint(ptClient.x, ptClient.y);
@@ -4350,7 +4372,7 @@ void SciTEBase::MoveSplit(GUI::Point ptNewDrag) {
 void SciTEBase::TimerStart(int /* mask */) {
 }
 
-void SciTEBase::TimerEnd(int /* mask */) {
+void SciTEBase::TimerEnd(int /* mask */) noexcept {
 }
 
 void SciTEBase::OnTimer() {
@@ -4941,7 +4963,7 @@ void SciTEBase::UnsetProperty(const char *key) {
 	needReadProperties = true;
 }
 
-uintptr_t SciTEBase::GetInstance() {
+uintptr_t SciTEBase::GetInstance() noexcept {
 	return 0;
 }
 

@@ -8,69 +8,6 @@
 #ifndef SCITEWIN_H
 #define SCITEWIN_H
 
-#include <cstdlib>
-#include <cstdint>
-#include <cassert>
-#include <cstring>
-#include <cstdio>
-#include <cstdarg>
-
-#include <new>
-#include <compare>
-#include <tuple>
-#include <string>
-#include <string_view>
-#include <vector>
-#include <array>
-#include <deque>
-#include <map>
-#include <set>
-#include <optional>
-#include <initializer_list>
-#include <algorithm>
-#include <ranges>
-#include <iterator>
-#include <memory>
-#include <numeric>
-#include <chrono>
-#include <ios>
-#include <sstream>
-#include <iomanip>
-#include <atomic>
-#include <mutex>
-
-#include <fcntl.h>
-
-#include <sys/stat.h>
-
-#undef _WIN32_WINNT
-#undef WINVER
-#ifdef WIN_TARGET
-#define _WIN32_WINNT WIN_TARGET
-#define WINVER WIN_TARGET
-#else
-#define _WIN32_WINNT  0x0A00
-#define WINVER 0x0A00
-#endif
-#undef NOMINMAX
-#define NOMINMAX 1
-#include <windows.h>
-#include <commctrl.h>
-#include <richedit.h>
-#include <windowsx.h>
-#if defined(DISABLE_THEMES)
-// Old compilers do not have Uxtheme.h
-typedef void *HTHEME;
-#else
-#include <uxtheme.h>
-#include <vsstyle.h>
-#include <vssym32.h>
-#define THEME_AVAILABLE
-#endif
-#include <shlwapi.h>
-// need this header for SHBrowseForFolder
-#include <shlobj.h>
-
 #include "ScintillaTypes.h"
 #include "ScintillaMessages.h"
 #include "ScintillaCall.h"
@@ -211,6 +148,10 @@ protected:
 	HFONT fontTabs;
 	std::vector<GUI::gui_string> tabNamesCurrent;
 
+	// Task Bar access
+	ITaskbarList3 *pTaskBar = nullptr;
+	HICON iconBusy {};
+
 	/// Preserve focus during deactivation
 	HWND wFocus;
 
@@ -242,7 +183,7 @@ protected:
 	SystemAppearance CurrentAppearance() const noexcept override;
 
 	void TimerStart(int mask) override;
-	void TimerEnd(int mask) override;
+	void TimerEnd(int mask) noexcept override;
 
 	void ShowOutputOnMainThread() override;
 	void SizeContentWindows() override;
@@ -291,8 +232,8 @@ protected:
 	void FindMessageBox(const std::string &msg, const std::string *findItem = nullptr) override;
 	void AboutDialog() override;
 	void DropFiles(HDROP hdrop);
-	void MinimizeToTray();
-	void RestoreFromTray();
+	void MinimizeToTray() noexcept;
+	void RestoreFromTray() noexcept;
 	void SettingChanged(WPARAM wParam, LPARAM lParam);
 	void SysColourChanged(WPARAM wParam, LPARAM lParam);
 	void ScaleChanged(WPARAM wParam, LPARAM lParam);
@@ -423,39 +364,12 @@ public:
 	std::string EncodeString(const std::string &s) override;
 	std::string GetRangeInUIEncoding(GUI::ScintillaWindow &win, SA::Span span) override;
 
-	uintptr_t GetInstance() override;
+	uintptr_t GetInstance() noexcept override;
 	static void Register(HINSTANCE hInstance_) noexcept;
 	static LRESULT CALLBACK TWndProc(
 		HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam);
 
 	friend class UniqueInstance;
 };
-
-inline bool IsKeyDown(int key) noexcept {
-	return (::GetKeyState(key) & 0x80000000) != 0;
-}
-
-GUI::Point PointOfCursor() noexcept;
-GUI::Point ClientFromScreen(HWND hWnd, GUI::Point ptScreen) noexcept;
-
-// Common minor conversions
-
-constexpr GUI::Point PointFromLong(LPARAM lPoint) noexcept {
-	// static_cast<short> needed for negative coordinates
-	return GUI::Point(static_cast<short>(LOWORD(lPoint)), static_cast<short>(HIWORD(lPoint)));
-}
-
-constexpr int ControlIDOfWParam(WPARAM wParam) noexcept {
-	constexpr WPARAM lowMask = 0xffff;
-	return wParam & lowMask;
-}
-
-inline HWND HwndOf(const GUI::Window &w) noexcept {
-	return static_cast<HWND>(w.GetID());
-}
-
-inline HMENU HmenuID(size_t id) noexcept {
-	return reinterpret_cast<HMENU>(id);
-}
 
 #endif

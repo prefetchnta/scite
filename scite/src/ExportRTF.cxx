@@ -134,9 +134,9 @@ void SciTEBase::SaveToStreamRTF(std::ostream &os, SA::Position start, SA::Positi
 	int tabSize = props.GetInt("export.rtf.tabsize", props.GetInt("tabsize"));
 	const int wysiwyg = props.GetInt("export.rtf.wysiwyg", 1);
 	std::string fontFace = props.GetExpandedString("export.rtf.font.face");
-	if (fontFace.length()) {
+	if (!fontFace.empty()) {
 		defaultStyle.font = fontFace;
-	} else if (defaultStyle.font.length() == 0) {
+	} else if (defaultStyle.font.empty()) {
 		defaultStyle.font = RTF_FONTFACE;
 	}
 	const int fontSize = props.GetInt("export.rtf.font.size", 0);
@@ -169,7 +169,7 @@ void SciTEBase::SaveToStreamRTF(std::ostream &os, SA::Position start, SA::Positi
 
 		if (sd.specified != StyleDefinition::sdNone) {
 			size_t iFont = 0;
-			if (wysiwyg && sd.font.length()) {
+			if (wysiwyg && !sd.font.empty()) {
 				iFont = FindCaseInsensitive(fonts, sd.font);
 				if (iFont >= fonts.size()) {
 					fonts.push_back(sd.font);

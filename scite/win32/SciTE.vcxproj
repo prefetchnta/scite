@@ -248,6 +248,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\Win32\SciBall.ico" />
+    <None Include="..\Win32\Busy.ico" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="SciTE.exe.manifest" />

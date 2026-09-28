@@ -5,8 +5,38 @@
 // Copyright 1998-2003 by Neil Hodgson <neilh@scintilla.org>
 // The License.txt file describes the conditions under which this software may be distributed.
 
+#include <cstdlib>
+#include <cassert>
+
+#include <new>
+#include <compare>
+#include <tuple>
+#include <string>
+#include <string_view>
+#include <vector>
+#include <array>
+#include <deque>
+#include <map>
+#include <set>
+#include <optional>
+#include <algorithm>
+#include <ranges>
+#include <iterator>
+#include <memory>
+#include <chrono>
+#include <sstream>
+#include <atomic>
+#include <mutex>
+
+#define NOMINMAX 1
+#include <windows.h>
+#include <windowsx.h>
+#include <shlobj.h>
+
 #include "SciTEWin.h"
+
 #include "DLLFunction.h"
+#include "WinBasics.h"
 
 namespace {
 
@@ -85,7 +115,7 @@ SciTEWin *Caller(HWND hDlg, UINT message, LPARAM lParam) noexcept {
 	if (message == WM_INITDIALOG) {
 		::SetWindowLongPtr(hDlg, DWLP_USER, lParam);
 	}
-	return reinterpret_cast<SciTEWin *>(::GetWindowLongPtr(hDlg, DWLP_USER));
+	return PtrParam<SciTEWin *>(::GetWindowLongPtr(hDlg, DWLP_USER));
 }
 
 }
@@ -127,7 +157,7 @@ void SciTEWin::WarnUser(int warnID) {
 		sound = warningFields[1];
 	}
 	int flashLen = 0;
-	if (warningFields.size() > 0) {
+	if (!warningFields.empty()) {
 		flashLen = IntegerFromString(warningFields[0], 0);
 	}
 
@@ -190,7 +220,7 @@ bool SciTEWin::ModelessHandler(MSG *pmsg) {
 //  DoDialog is a bit like something in PC Magazine May 28, 1991, page 357
 INT_PTR SciTEWin::DoDialog(const WCHAR *resName, DLGPROC lpProc) {
 	const INT_PTR result =
-				   ::DialogBoxParam(hInstance, resName, MainHWND(), lpProc, reinterpret_cast<LPARAM>(this));
+				   ::DialogBoxParamW(hInstance, resName, MainHWND(), lpProc, FromPtr(this));
 
 	if (result == -1) {
 		const GUI::gui_string errorNum = GUI::StringFromInteger(::GetLastError());
@@ -208,17 +238,17 @@ HWND SciTEWin::CreateParameterisedDialog(LPCWSTR lpTemplateName, DLGPROC lpProc)
 				    lpTemplateName,
 				    MainHWND(),
 				    lpProc,
-				    reinterpret_cast<LPARAM>(this));
+				    FromPtr(this));
 }
 
 GUI::gui_string SciTEWin::DialogFilterFromProperty(const GUI::gui_string &filterProperty) {
 	std::vector<GUI::gui_string> transformed;
-	if (filterProperty.length()) {
+	if (!filterProperty.empty()) {
 		const std::vector<GUI::gui_string> filters = StringSplit(filterProperty, GUI_TEXT('|'));
 		for (size_t i = 0; i < filters.size()-1; i+=2) {
 			if (!filters[i].starts_with(GUI_TEXT("#"))) {
 				const GUI::gui_string localised = localiser.Text(GUI::UTF8FromString(filters[i]), false);
-				if (localised.size()) {
+				if (!localised.empty()) {
 					transformed.push_back(localised);
 				} else {
 					transformed.push_back(filters[i]);
@@ -246,7 +276,7 @@ void SciTEWin::CheckCommonDialogError() {
 }
 
 bool SciTEWin::OpenDialog(const FilePath &directory, const GUI::gui_string &filesFilter) {
-	enum {maxBufferSize=2048};
+	constexpr DWORD maxBufferSize = 2048;
 
 	DWORD filterDefault = 1;
 	std::vector<GUI::gui_string> filters = StringSplit(GUI::gui_string(filesFilter), L'|');
@@ -1065,7 +1095,7 @@ BOOL SciTEWin::ReplaceMessage(HWND hDlg, UINT message, WPARAM wParam) {
 			dlg.SetItemText(IDFINDSTYLE, std::to_wstring(
 						wEditor.UnsignedStyleAt(wEditor.CurrentPos())));
 		}
-		if (findWhat.length() != 0 && props.GetInt("find.replacewith.focus", 1)) {
+		if (!findWhat.empty() && props.GetInt("find.replacewith.focus", 1)) {
 			::SetFocus(::GetDlgItem(hDlg, IDREPLACEWITH));
 			return FALSE;
 		}
@@ -1208,15 +1238,14 @@ int __stdcall BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM, LPARAM pData) {
 void SciTEWin::PerformGrep() {
 	SelectionIntoProperties();
 
-	std::string findInput;
 	long flags = 0;
-	if (props.GetString("find.input").length()) {
-		findInput = props.GetNewExpandString("find.input");
+	const std::string findInput = props.GetNewExpandString("find.input");
+	if (!findInput.empty()) {
 		flags += jobHasInput;
 	}
 
-	std::string findCommand = props.GetNewExpandString("find.command");
-	if (findCommand == "") {
+	const std::string findCommand = props.GetNewExpandString("find.command");
+	if (findCommand.empty()) {
 		// Call InternalGrep in a new thread
 		// searchParams is "(w|~)(c|~)(d|~)(b|~)\0files\0text"
 		// A "w" indicates whole word, "c" case sensitive, "d" dot directories, "b" binary files
@@ -1345,7 +1374,7 @@ BOOL SciTEWin::GrepMessage(HWND hDlg, UINT message, WPARAM wParam) {
 				if (!directory.ends_with(pathSepString)) {
 					directory += pathSepString;
 				}
-				info.lParam = reinterpret_cast<LPARAM>(directory.c_str());
+				info.lParam = FromPtr(directory.data());
 
 				// Execute the browsing dialog.
 				LPITEMIDLIST pidl = ::SHBrowseForFolder(&info);
@@ -1386,7 +1415,7 @@ void SciTEWin::FindInFiles() {
 	props.Set("find.what", findWhat);
 
 	std::string directory = props.GetString("find.in.directory");
-	if (directory.length()) {
+	if (!directory.empty()) {
 		props.Set("find.directory", directory);
 	} else {
 		props.SetPath("find.directory", filePath.Directory());

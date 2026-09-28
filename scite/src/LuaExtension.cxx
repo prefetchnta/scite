@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <array>
 #include <set>
 #include <optional>
 #include <memory>
@@ -112,15 +113,15 @@ ExtensionAPI::Pane check_pane_object(lua_State *L, int index);
 void push_pane_object(lua_State *L, ExtensionAPI::Pane p) noexcept;
 int iface_function_helper(lua_State *L, const IFaceFunction &func);
 
-bool IFaceTypeIsScriptable(IFaceType t, int index) noexcept {
+constexpr bool IFaceTypeIsScriptable(IFaceType t, int index) noexcept {
 	return t < iface_stringresult || (index==1 && t == iface_stringresult);
 }
 
-bool IFaceTypeIsNumeric(IFaceType t) noexcept {
+constexpr bool IFaceTypeIsNumeric(IFaceType t) noexcept {
 	return (t > iface_void && t < iface_bool);
 }
 
-bool IFaceFunctionIsScriptable(const IFaceFunction &f) noexcept {
+constexpr bool IFaceFunctionIsScriptable(const IFaceFunction &f) noexcept {
 	return IFaceTypeIsScriptable(f.paramType[0], 0) && IFaceTypeIsScriptable(f.paramType[1], 1);
 }
 
@@ -479,11 +480,11 @@ int cf_pane_findtext(lua_State *L) {
 // loops and is more tamper-resistant.
 
 struct PaneMatchObject {
-	ExtensionAPI::Pane pane;
+	ExtensionAPI::Pane pane = ExtensionAPI::Pane::paneEditor;
 	SA::Span range;
-	int flags; // this is really part of the state, but is kept here for convenience
-	SA::Position endPosOrig; // has to do with preventing infinite loop on a 0-length match
-	bool RangeValid() const noexcept {
+	int flags = 0; // this is really part of the state, but is kept here for convenience
+	SA::Position endPosOrig = 0; // has to do with preventing infinite loop on a 0-length match
+	[[nodiscard]] bool RangeValid() const noexcept {
 		return (range.start >= 0) && (range.end >= 0) && (range.start <= range.end);
 	}
 };
@@ -879,7 +880,7 @@ int iface_function_helper(lua_State *L, const IFaceFunction &func) {
 
 	int arg = 2;
 
-	intptr_t params[2] = {0, 0};
+	std::array<intptr_t, 2> params {};
 
 	std::string stringResult;
 	bool needStringResult = false;

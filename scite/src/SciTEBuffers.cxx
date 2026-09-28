@@ -667,7 +667,7 @@ namespace {
 
 std::vector<SA::Line> LinesFromString(const std::string &s) {
 	std::vector<SA::Line> result;
-	if (s.length()) {
+	if (!s.empty()) {
 		size_t start = 0;
 		for (;;) {
 			const SA::Line line = IntegerFromText(s.c_str() + start) - 1;
@@ -684,7 +684,7 @@ std::vector<SA::Line> LinesFromString(const std::string &s) {
 std::string StringFromLines(const std::vector<SA::Line> &lines) {
 	std::string result;
 	for (const SA::Line line : lines) {
-		if (result.length()) {
+		if (!result.empty()) {
 			result.append(",");
 		}
 		std::string sLine = std::to_string(line + 1);
@@ -850,7 +850,7 @@ void SciTEBase::SaveSessionFile(const GUI::gui_char *sessionName) {
 
 				if (props.GetInt("session.bookmarks")) {
 					const std::string bmString = StringFromLines(buff.bookmarks);
-					if (bmString.length()) {
+					if (!bmString.empty()) {
 						propKey = IndexPropKey("buffer", i, "bookmarks");
 						fprintf(sessionFile, "%s=%s\n", propKey.c_str(), bmString.c_str());
 					}
@@ -864,7 +864,7 @@ void SciTEBase::SaveSessionFile(const GUI::gui_char *sessionName) {
 
 				if (props.GetInt("fold") && props.GetInt("session.folds")) {
 					const std::string foldsString = StringFromLines(buff.foldState);
-					if (foldsString.length()) {
+					if (!foldsString.empty()) {
 						propKey = IndexPropKey("buffer", i, "folds");
 						fprintf(sessionFile, "%s=%s\n", propKey.c_str(), foldsString.c_str());
 					}
@@ -1519,7 +1519,7 @@ bool SciTEBase::ToolIsImmediate(int item) {
 	propName += itemSuffix;
 
 	const std::string_view command = props.GetWild(propName, FileNameExt().AsUTF8());
-	if (command.length()) {
+	if (!command.empty()) {
 		JobMode jobMode(props, item, FileNameExt().AsUTF8());
 		return jobMode.jobType == JobSubsystem::immediate;
 	}
@@ -1578,7 +1578,7 @@ void SciTEBase::ToolsMenu(int item) {
 	const std::string itemSuffix = StdStringFromInteger(item) + ".";
 	const std::string propName = std::string("command.") + itemSuffix;
 	std::string command(props.GetWild(propName, FileNameExt().AsUTF8()));
-	if (command.length()) {
+	if (!command.empty()) {
 		JobMode jobMode(props, item, FileNameExt().AsUTF8());
 		if (jobQueue.IsExecuting() && (jobMode.jobType != JobSubsystem::immediate))
 			// Busy running a tool and running a second can cause failures.
@@ -2037,7 +2037,7 @@ void SciTEBase::ShowMessages(SA::Line line) {
 			if (msgCurrent.find(message) == std::string::npos) {
 				// Only append unique messages
 				std::string stylesCurrent = wEditor.AnnotationGetStyles(sourceLine);
-				if (msgCurrent.length()) {
+				if (!msgCurrent.empty()) {
 					msgCurrent += "\n";
 					stylesCurrent += '\0';
 				}

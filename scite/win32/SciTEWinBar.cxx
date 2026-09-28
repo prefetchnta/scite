@@ -5,7 +5,37 @@
 // Copyright 1998-2003 by Neil Hodgson <neilh@scintilla.org>
 // The License.txt file describes the conditions under which this software may be distributed.
 
+#include <cstdlib>
+#include <cassert>
+
+#include <new>
+#include <compare>
+#include <tuple>
+#include <string>
+#include <string_view>
+#include <vector>
+#include <array>
+#include <deque>
+#include <map>
+#include <set>
+#include <optional>
+#include <algorithm>
+#include <ranges>
+#include <iterator>
+#include <memory>
+#include <chrono>
+#include <sstream>
+#include <atomic>
+#include <mutex>
+
+#define NOMINMAX 1
+#include <windows.h>
+#include <commctrl.h>
+#include <windowsx.h>
+#include <shlobj.h>
+
 #include "SciTEWin.h"
+#include "WinBasics.h"
 
 /**
  * Set up properties for FileTime, FileDate, CurrentTime, CurrentDate and FileAttr.
@@ -69,9 +99,8 @@ void SciTEWin::SetFileProperties(
  * Update the status bar text.
  */
 void SciTEWin::SetStatusBarText(const char *s) {
-	GUI::gui_string barText = GUI::StringFromUTF8(s);
-	::SendMessage(HwndOf(wStatusBar),
-		      SB_SETTEXT, 0, reinterpret_cast<LPARAM>(barText.c_str()));
+	const GUI::gui_string barText = GUI::StringFromUTF8(s);
+	SendPointer(HwndOf(wStatusBar), SB_SETTEXT, 0, barText.c_str());
 }
 
 void SciTEWin::UpdateTabs(const std::vector<GUI::gui_string> &tabNames) {
@@ -161,18 +190,6 @@ void SciTEWin::RemoveAllTabs() {
 	TabCtrl_DeleteAllItems(HwndOf(wTabBar));
 }
 
-GUI::Point PointOfCursor() noexcept {
-	POINT ptCursor;
-	::GetCursorPos(&ptCursor);
-	return GUI::Point(ptCursor.x, ptCursor.y);
-}
-
-GUI::Point ClientFromScreen(HWND hWnd, GUI::Point ptScreen) noexcept {
-	POINT ptClient = { ptScreen.x, ptScreen.y };
-	::ScreenToClient(hWnd, &ptClient);
-	return GUI::Point(ptClient.x, ptClient.y);
-}
-
 namespace {
 
 int TabAtPoint(HWND hWnd, GUI::Point pt) noexcept {
@@ -227,7 +244,7 @@ void SciTEWin::Notify(SCNotification *notification) {
 				prefix += StdStringFromInteger(item);
 				prefix += ".";
 				std::string commandName = props.GetNewExpandString(prefix, filePath.AsUTF8());
-				if (commandName.length()) {
+				if (!commandName.empty()) {
 					AddToPopUp(commandName.c_str(), itemID, true);
 					bAddSeparator = true;
 				}
@@ -324,8 +341,8 @@ void SciTEWin::Notify(SCNotification *notification) {
 						// Handle '&' characters in path, since they are interpreted in
 						// tooltips.
 						size_t amp = 0;
-						while ((amp = path.find(GUI_TEXT("&"), amp)) != GUI::gui_string::npos) {
-							path.insert(amp, GUI_TEXT("&"));
+						while ((amp = path.find(L'&', amp)) != GUI::gui_string::npos) {
+							path.insert(amp, L"&");
 							amp += 2;
 						}
 						StringCopy(tooltipText, path.c_str());
@@ -386,20 +403,21 @@ void SciTEWin::ActivateWindow(const char *) {
 	// This does nothing as, on Windows, you can no longer activate yourself
 }
 
-enum { tickerID = 100 };
+constexpr UINT_PTR tickerID = 100;
+constexpr UINT tickerPeriod = 1000;
 
 void SciTEWin::TimerStart(int mask) {
 	const int maskNew = timerMask | mask;
 	if (timerMask != maskNew) {
 		if (timerMask == 0) {
 			// Create a 1 second ticker
-			::SetTimer(HwndOf(wSciTE), tickerID, 1000, nullptr);
+			::SetTimer(HwndOf(wSciTE), tickerID, tickerPeriod, nullptr);
 		}
 		timerMask = maskNew;
 	}
 }
 
-void SciTEWin::TimerEnd(int mask) {
+void SciTEWin::TimerEnd(int mask) noexcept {
 	const int maskNew = timerMask & ~mask;
 	if (timerMask != maskNew) {
 		if (maskNew == 0) {
@@ -491,7 +509,8 @@ void SciTEWin::SizeSubWindows() {
 
 	// May need to copy some values out to other variables
 
-	HDWP hdwp = BeginDeferWindowPos(10);
+	constexpr int windowsToDefer = 20;
+	HDWP hdwp = ::BeginDeferWindowPos(windowsToDefer);
 
 	int yPos = rcClient.top;
 	for (const Band &band : bands) {
@@ -629,22 +648,17 @@ void SciTEWin::LocaliseMenu(HMENU hmenu) {
 			if (mii.fType == MFT_STRING || mii.fType == MFT_RADIOCHECK) {
 				if (mii.dwTypeData) {
 					GUI::gui_string text(mii.dwTypeData);
-					GUI::gui_string accel(mii.dwTypeData);
-					const size_t len = text.length();
-					const size_t tab = text.find(GUI_TEXT("\t"));
-					if (tab != GUI::gui_string::npos) {
-						text.erase(tab, len - tab);
-						accel.erase(0, tab + 1);
-					} else {
-						accel = GUI_TEXT("");
+					GUI::gui_string accel;
+					if (const size_t tab = text.find(L'\t'); tab != GUI::gui_string::npos) {
+						accel = text.substr(tab + 1);
+						text.erase(tab);
 					}
 					text = localiser.Text(GUI::UTF8FromString(text), true);
-					if (text.length()) {
-						if (accel != GUI_TEXT("")) {
-							text += GUI_TEXT("\t");
+					if (!text.empty()) {
+						if (!accel.empty()) {
+							text += L"\t";
 							text += accel;
 						}
-						text.append(1, 0);
 						mii.dwTypeData = text.data();
 						::SetMenuItemInfoW(hmenu, i, TRUE, &mii);
 					}
@@ -662,7 +676,7 @@ void SciTEWin::LocaliseMenus() {
 void SciTEWin::LocaliseControl(HWND w) {
 	std::string originalText = GUI::UTF8FromString(TextOfWindow(w));
 	GUI::gui_string translatedText = localiser.Text(originalText, false);
-	if (translatedText.length())
+	if (!translatedText.empty())
 		::SetWindowTextW(w, translatedText.c_str());
 }
 
@@ -711,13 +725,9 @@ LRESULT CALLBACK TabWndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lPar
 	static int iLastClickTab = -1;
 	static HWND hwndLastFocus {};
 
-	switch (iMessage) {
-
-	case WM_LBUTTONDOWN: {
-			const GUI::Point pt = PointFromLong(lParam);
-			iLastClickTab = TabAtPoint(hWnd, pt);
-		}
-		break;
+	if (iMessage == WM_LBUTTONDOWN) {
+		const GUI::Point pt = PointFromLong(lParam);
+		iLastClickTab = TabAtPoint(hWnd, pt);
 	}
 
 	LRESULT retResult;
@@ -820,26 +830,29 @@ LRESULT CALLBACK TabWndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lPar
 					HDC hDC = ::GetDC(hWnd);
 					if (hDC) {
 
+						constexpr int arrowArm = 5;
+						constexpr int arrowPoint = 7;
+
 						const int xLeft = tabrc.left + 8;
-						const int yLeft = tabrc.top + (tabrc.bottom - tabrc.top) / 2;
+						const int yLeft = tabrc.top + ((tabrc.bottom - tabrc.top) / 2);
 						POINT ptsLeftArrow[] = {
 							{xLeft, yLeft - 2},
 							{xLeft - 2, yLeft - 2},
-							{xLeft - 2, yLeft - 5},
-							{xLeft - 7, yLeft},
-							{xLeft - 2, yLeft + 5},
+							{xLeft - 2, yLeft - arrowArm},
+							{xLeft - arrowPoint, yLeft},
+							{xLeft - 2, yLeft + arrowArm},
 							{xLeft - 2, yLeft + 2},
 							{xLeft, yLeft + 2}
 						};
 
 						const int xRight = tabrc.right - 10;
-						const int yRight = tabrc.top + (tabrc.bottom - tabrc.top) / 2;
+						const int yRight = tabrc.top + ((tabrc.bottom - tabrc.top) / 2);
 						POINT ptsRightArrow[] = {
 							{xRight, yRight - 2},
 							{xRight + 2, yRight - 2},
-							{xRight + 2, yRight - 5},
-							{xRight + 7, yRight},
-							{xRight + 2, yRight + 5},
+							{xRight + 2, yRight - arrowArm},
+							{xRight + arrowPoint, yRight},
+							{xRight + 2, yRight + arrowArm},
 							{xRight + 2, yRight + 2},
 							{xRight, yRight + 2}
 						};
@@ -889,6 +902,7 @@ void SciTEWin::CreateStrip(LPCWSTR stripName, LPVOID lpParam) {
 void SciTEWin::Creation() {
 
 	constexpr int widthWindow = 100;	// Temporary until stretched to fit
+	constexpr int heightWindow = 100;	// Temporary until stretched to fit
 
 	wContent = ::CreateWindowExW(
 			   flatterUI ? 0 : WS_EX_CLIENTEDGE,
@@ -896,9 +910,9 @@ void SciTEWin::Creation() {
 			   L"Source",
 			   WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 			   0, 0,
-			   widthWindow, 100,
+			   widthWindow, heightWindow,
 			   MainHWND(),
-			   HmenuID(2000),
+			   HmenuID(IDM_CONTENTWIN),
 			   hInstance,
 			   &contents);
 	wContent.Show();
@@ -909,7 +923,7 @@ void SciTEWin::Creation() {
 				     L"Source",
 				     WS_CHILD | WS_VSCROLL | WS_HSCROLL | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 				     0, 0,
-				     widthWindow, 100,
+				     widthWindow, heightWindow,
 				     HwndOf(wContent),
 				     HmenuID(IDM_SRCWIN),
 				     hInstance,
@@ -927,7 +941,7 @@ void SciTEWin::Creation() {
 				     L"Run",
 				     WS_CHILD | WS_VSCROLL | WS_HSCROLL | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 				     0, 0,
-				     widthWindow, 100,
+				     widthWindow, heightWindow,
 				     HwndOf(wContent),
 				     HmenuID(IDM_RUNWIN),
 				     hInstance,
@@ -941,6 +955,12 @@ void SciTEWin::Creation() {
 	//wOutput.SetCaretPeriod(0);
 	wOutput.UsePopUp(SA::PopUp::Never);
 	::DragAcceptFiles(MainHWND(), true);
+
+	const HRESULT hrCreation = CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
+		IID_ITaskbarList3, reinterpret_cast<LPVOID *>(&pTaskBar));
+	if (FAILED(hrCreation)) {
+		pTaskBar = nullptr;
+	}
 
 	HWND hwndToolBar = ::CreateWindowExW(
 				   0,
@@ -958,9 +978,9 @@ void SciTEWin::Creation() {
 
 	::SendMessage(hwndToolBar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
 	::SendMessage(hwndToolBar, TB_SETBITMAPSIZE, 0, tbLarge ? MAKELPARAM(24, 24) : MAKELPARAM(16, 16));
-	::SendMessage(hwndToolBar, TB_LOADIMAGES,
+	SendPointer(hwndToolBar, TB_LOADIMAGES,
 		      tbLarge ? IDB_STD_LARGE_COLOR : IDB_STD_SMALL_COLOR,
-		      reinterpret_cast<LPARAM>(HINST_COMMCTRL));
+		      HINST_COMMCTRL);
 
 	TBADDBITMAP addbmp = { hInstance, IDR_CLOSEFILE };
 
@@ -968,7 +988,7 @@ void SciTEWin::Creation() {
 		addbmp.nID = IDR_CLOSEFILE24;
 	}
 
-	::SendMessage(hwndToolBar, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&addbmp));
+	SendPointer(hwndToolBar, TB_ADDBITMAP, 1, &addbmp);
 
 	TBBUTTON tbb[std::size(bbs)] = {};
 	for (unsigned int i = 0; i < std::size(bbs); i++) {
@@ -986,7 +1006,7 @@ void SciTEWin::Creation() {
 		tbb[i].iString = 0;
 	}
 
-	::SendMessage(hwndToolBar, TB_ADDBUTTONS, std::size(bbs), reinterpret_cast<LPARAM>(tbb));
+	SendPointer(hwndToolBar, TB_ADDBUTTONS, std::size(bbs), tbb);
 
 	wToolBar.Show();
 
@@ -1050,12 +1070,11 @@ void SciTEWin::Creation() {
 			     hInstance,
 			     nullptr);
 	wStatusBar.Show();
-	const int widths[] = { 4000 };
+	constexpr int widerThanWindow = 4000;
+	const int widths = widerThanWindow;
 	// Perhaps we can define a syntax to create more parts,
 	// but it is probably an overkill for a marginal feature
-	::SendMessage(HwndOf(wStatusBar),
-		      SB_SETPARTS, 1,
-		      reinterpret_cast<LPARAM>(widths));
+	SendPointer(HwndOf(wStatusBar), SB_SETPARTS, 1, &widths);
 
 	bands.emplace_back(true, tbLarge ? heightToolsBig : heightTools, false, wToolBar);
 	bands.emplace_back(true, heightTab, false, wTabBar);
@@ -1069,7 +1088,7 @@ void SciTEWin::Creation() {
 	bands.emplace_back(true, heightStatus, false, wStatusBar);
 
 #ifndef NO_LUA
-	if (props.GetExpandedString("ext.lua.startup.script").length() == 0)
+	if (props.GetExpandedString("ext.lua.startup.script").empty())
 		DestroyMenuItem(menuOptions, IDM_OPENLUAEXTERNALFILE);
 #else
 	DestroyMenuItem(menuOptions, IDM_OPENLUAEXTERNALFILE);
