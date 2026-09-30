@@ -39,6 +39,12 @@
 #include "SciTEBase.h"
 #include "UniqueInstance.h"
 #include "StripDefinition.h"
+#ifndef WM_DPICHANGED /* FUCK */
+    #define WM_DPICHANGED 0x02E0 /* FUCK */
+#endif /* FUCK */
+#ifndef USER_DEFAULT_SCREEN_DPI /* FUCK */
+    #define USER_DEFAULT_SCREEN_DPI 96 /* FUCK */
+#endif /* FUCK */
 #include "Strips.h"
 #include "SciTEKeys.h"
 
